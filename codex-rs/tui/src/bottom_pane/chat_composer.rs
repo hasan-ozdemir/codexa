@@ -123,6 +123,7 @@ pub(crate) struct ChatComposer {
     hide_edit_marker: bool,
     hide_prompt_hints: bool,
     hide_statusbar_hints: bool,
+    align_left: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -186,6 +187,9 @@ impl ChatComposer {
             hide_statusbar_hints: env::var("a11y_hide_statusbar_hints")
                 .map(|v| !matches!(v.to_ascii_lowercase().as_str(), "0" | "false" | "no"))
                 .unwrap_or(true),
+            align_left: env::var("a11y_editor_align_left")
+                .map(|v| !matches!(v.to_ascii_lowercase().as_str(), "0" | "false" | "no"))
+                .unwrap_or(true),
         };
         this.extension_keys = this.load_extension_keys();
         // Apply configuration via the setter to keep side-effects centralized.
@@ -209,7 +213,8 @@ impl ChatComposer {
         };
         let [composer_rect, popup_rect] =
             Layout::vertical([Constraint::Min(3), popup_constraint]).areas(area);
-        let textarea_rect = composer_rect.inset(Insets::tlbr(1, LIVE_PREFIX_COLS, 1, 1));
+        let left_inset = if self.align_left { 0 } else { LIVE_PREFIX_COLS };
+        let textarea_rect = composer_rect.inset(Insets::tlbr(1, left_inset, 1, 1));
         [composer_rect, textarea_rect, popup_rect]
     }
 
