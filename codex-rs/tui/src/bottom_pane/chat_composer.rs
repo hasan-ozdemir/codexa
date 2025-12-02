@@ -19,6 +19,10 @@ use ratatui::widgets::WidgetRef;
 use super::chat_composer_history::ChatComposerHistory;
 use super::command_popup::CommandItem;
 use super::command_popup::CommandPopup;
+use super::extension_host::ExtensionHost;
+use super::extension_host::KeyBinding;
+use super::external_editor::ExternalEditorError;
+use super::external_editor::launch_external_editor;
 use super::file_search_popup::FileSearchPopup;
 use super::footer::FooterMode;
 use super::footer::FooterProps;
@@ -113,6 +117,15 @@ pub(crate) struct ChatComposer {
     footer_mode: FooterMode,
     footer_hint_override: Option<Vec<(String, String)>>,
     context_window_percent: Option<i64>,
+    extension_host: ExtensionHost,
+    extension_keys: ExtensionKeyConfig,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ExtensionKeyConfig {
+    external_edit: Vec<KeyBinding>,
+    history_prev: Vec<KeyBinding>,
+    history_next: Vec<KeyBinding>,
 }
 
 /// Popup state – at most one can be visible at any time.
@@ -156,7 +169,10 @@ impl ChatComposer {
             footer_mode: FooterMode::ShortcutSummary,
             footer_hint_override: None,
             context_window_percent: None,
+            extension_host: ExtensionHost::new(),
+            extension_keys: ExtensionKeyConfig::default(),
         };
+        this.extension_keys = this.load_extension_keys();
         // Apply configuration via the setter to keep side-effects centralized.
         this.set_disable_paste_burst(disable_paste_burst);
         this
@@ -364,6 +380,74 @@ impl ChatComposer {
         self.textarea.insert_str(text);
         self.sync_command_popup();
         self.sync_file_search_popup();
+    }
+
+    fn edit_with_external_editor(&mut self) -> bool {
+        let current = self.current_text();
+        match self.extension_host.external_edit(&current) {
+            Ok(Some(updated)) => {
+                self.apply_external_editor_text(updated);
+                return true;
+            }
+            Ok(None) => {}
+            Err(error) => {
+                self.report_external_editor_error(error);
+                return true;
+            }
+        }
+
+        let editor_override = self.extension_host.config().editor_command.clone();
+        match launch_external_editor(&current, &editor_override) {
+            Ok(updated) => {
+                self.apply_external_editor_text(updated);
+                true
+            }
+            Err(error) => {
+                self.report_external_editor_error(error);
+                true
+            }
+        }
+    }
+
+    fn apply_external_editor_text(&mut self, updated: String) {
+        self.pending_pastes.clear();
+        self.textarea.set_text(&updated);
+        self.textarea.set_cursor(updated.len());
+        self.reconcile_attachments_with_text();
+        self.sync_command_popup();
+        self.sync_file_search_popup();
+    }
+
+    fn report_external_editor_error(&self, error: ExternalEditorError) {
+        self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
+            history_cell::new_error_event(error.user_message()),
+        )));
+    }
+
+    fn reconcile_attachments_with_text(&mut self) {
+        if self.attached_images.is_empty() {
+            return;
+        }
+
+        let text_after = self.textarea.text();
+        let mut needed: HashMap<String, usize> = HashMap::new();
+        for img in &self.attached_images {
+            needed
+                .entry(img.placeholder.clone())
+                .or_insert_with(|| text_after.matches(&img.placeholder).count());
+        }
+
+        let mut used: HashMap<String, usize> = HashMap::new();
+        let mut kept: Vec<AttachedImage> = Vec::with_capacity(self.attached_images.len());
+        for img in self.attached_images.drain(..) {
+            let total_needed = *needed.get(&img.placeholder).unwrap_or(&0);
+            let used_count = used.entry(img.placeholder.clone()).or_insert(0);
+            if *used_count < total_needed {
+                kept.push(img);
+                *used_count += 1;
+            }
+        }
+        self.attached_images = kept;
     }
 
     /// Handle a key event coming from the main UI.
@@ -883,37 +967,51 @@ impl ChatComposer {
                 self.app_event_tx.send(AppEvent::ExitRequest);
                 (InputResult::None, true)
             }
+            input if self.matches_external_edit(&input) => {
+                (InputResult::None, self.edit_with_external_editor())
+            }
             // -------------------------------------------------------------
-            // History navigation (Up / Down) – only when the composer is not
+            // History navigation (Up / Down) - only when the composer is not
             // empty or when the cursor is at the correct position, to avoid
             // interfering with normal cursor movement.
             // -------------------------------------------------------------
-            KeyEvent {
-                code: KeyCode::Up | KeyCode::Down,
-                ..
-            }
-            | KeyEvent {
-                code: KeyCode::Char('p') | KeyCode::Char('n'),
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            } => {
+            input if self.matches_history_prev(&input) => {
+                self.extension_host.log_event("Key matched history_prev");
                 if self
                     .history
                     .should_handle_navigation(self.textarea.text(), self.textarea.cursor())
+                    && let Some(text) = self.history.navigate_up(&self.app_event_tx)
                 {
-                    let replace_text = match key_event.code {
-                        KeyCode::Up => self.history.navigate_up(&self.app_event_tx),
-                        KeyCode::Down => self.history.navigate_down(&self.app_event_tx),
-                        KeyCode::Char('p') => self.history.navigate_up(&self.app_event_tx),
-                        KeyCode::Char('n') => self.history.navigate_down(&self.app_event_tx),
-                        _ => unreachable!(),
-                    };
-                    if let Some(text) = replace_text {
-                        self.set_text_content(text);
-                        return (InputResult::None, true);
-                    }
+                    self.set_text_content(text);
+                    return (InputResult::None, true);
                 }
-                self.handle_input_basic(key_event)
+                if let Some(text) = self.extension_history_navigation(KeyCode::Up) {
+                    self.set_text_content(text);
+                    self.extension_host
+                        .log_event("Applied history_prev text to textarea");
+                    return (InputResult::None, true);
+                }
+                self.handle_input_basic(input)
+            }
+            input if self.matches_history_next(&input) => {
+                self.extension_host.log_event("Key matched history_next");
+                if self
+                    .history
+                    .should_handle_navigation(self.textarea.text(), self.textarea.cursor())
+                    && let Some(text) = self.history.navigate_down(&self.app_event_tx)
+                {
+                    self.set_text_content(text);
+                    self.extension_host
+                        .log_event("Applied built-in history_next text to textarea");
+                    return (InputResult::None, true);
+                }
+                if let Some(text) = self.extension_history_navigation(KeyCode::Down) {
+                    self.set_text_content(text);
+                    self.extension_host
+                        .log_event("Applied history_next text to textarea");
+                    return (InputResult::None, true);
+                }
+                self.handle_input_basic(input)
             }
             KeyEvent {
                 code: KeyCode::Enter,
@@ -1042,12 +1140,72 @@ impl ChatComposer {
                 }
                 if !text.is_empty() {
                     self.history.record_local_submission(&text);
+                    self.extension_host.history_push(&text);
                 }
                 // Do not clear attached_images here; ChatWidget drains them via take_recent_submission_images().
                 (InputResult::Submitted(text), true)
             }
             input => self.handle_input_basic(input),
         }
+    }
+
+    #[cfg(test)]
+    fn extension_history_navigation(&self, code: KeyCode) -> Option<String> {
+        let _ = code;
+        None
+    }
+
+    #[cfg(not(test))]
+    fn extension_history_navigation(&self, code: KeyCode) -> Option<String> {
+        let text = match code {
+            KeyCode::Up => self.extension_host.history_prev(),
+            KeyCode::Down => self.extension_host.history_next(),
+            _ => None,
+        }?;
+        if text.is_empty() { None } else { Some(text) }
+    }
+
+    fn load_extension_keys(&self) -> ExtensionKeyConfig {
+        let cfg = self.extension_host.config();
+        ExtensionKeyConfig {
+            external_edit: cfg.external_edit_keys.clone(),
+            history_prev: cfg.history_prev_keys.clone(),
+            history_next: cfg.history_next_keys.clone(),
+        }
+    }
+
+    fn matches_external_edit(&self, key: &KeyEvent) -> bool {
+        if self
+            .extension_keys
+            .external_edit
+            .iter()
+            .any(|kb| kb.matches(key))
+        {
+            return true;
+        }
+        key.code == KeyCode::Char('g')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && key.kind == KeyEventKind::Press
+    }
+
+    fn matches_history_prev(&self, key: &KeyEvent) -> bool {
+        let no_mods = key.modifiers.is_empty();
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        self.extension_keys
+            .history_prev
+            .iter()
+            .any(|kb| kb.matches(key))
+            || (matches!(key.code, KeyCode::Up | KeyCode::PageUp) && (no_mods || ctrl))
+    }
+
+    fn matches_history_next(&self, key: &KeyEvent) -> bool {
+        let no_mods = key.modifiers.is_empty();
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        self.extension_keys
+            .history_next
+            .iter()
+            .any(|kb| kb.matches(key))
+            || (matches!(key.code, KeyCode::Down | KeyCode::PageDown) && (no_mods || ctrl))
     }
 
     fn handle_paste_burst_flush(&mut self, now: Instant) -> bool {
