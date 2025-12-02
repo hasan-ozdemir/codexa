@@ -29,6 +29,7 @@ pub(crate) struct ExtensionHost {
     config: ExtensionConfig,
     last_seed_mtime: RefCell<Option<SystemTime>>,
     log_path: PathBuf,
+    session_path: RefCell<Option<PathBuf>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -110,6 +111,7 @@ impl ExtensionHost {
             config,
             last_seed_mtime: RefCell::new(None),
             log_path,
+            session_path: RefCell::new(None),
         };
         host.log_event(format!(
             "Host initialized; discovered extensions: {:?}",
@@ -167,7 +169,14 @@ impl ExtensionHost {
     }
 
     pub(crate) fn history_push(&self, text: &str) {
-        let payload = json!({ "text": text });
+        self.ensure_session_path();
+        let session_path_json = self
+            .session_path
+            .borrow()
+            .as_ref()
+            .map(|p| json!(p))
+            .unwrap_or(Value::Null);
+        let payload = json!({ "text": text, "session_path": session_path_json });
         self.log_event(format!("history_push text='{text}'"));
         if let Err(err) = self.invoke_first("history_push", payload) {
             warn!(?err, "history_push extension failed");
@@ -181,6 +190,22 @@ impl ExtensionHost {
         let result = self.history_lookup("history_prev");
         self.log_event(format!("history_prev result={result:?}"));
         result
+    }
+
+    fn ensure_session_path(&self) {
+        if self.session_path.borrow().is_some() {
+            return;
+        }
+        let root = Self::history_root();
+        if let Some((_, latest)) = Self::find_latest_jsonl(&root) {
+            *self.session_path.borrow_mut() = Some(latest);
+        }
+    }
+
+    fn history_root() -> PathBuf {
+        dirs::home_dir()
+            .map(|h| h.join(".codex").join("sessions"))
+            .unwrap_or_else(|| PathBuf::from("."))
     }
 
     #[cfg_attr(test, allow(dead_code))]
@@ -472,6 +497,7 @@ impl ExtensionHost {
             seed.path,
             seed.entries.len()
         ));
+        *self.session_path.borrow_mut() = Some(seed.path.clone());
         let payload = json!({ "payload": { "entries": seed.entries, "session_path": seed.path } });
         for script in &self.scripts {
             let _ = Self::run_script(script, "history_seed", payload.clone(), &self.log_path);
@@ -480,9 +506,7 @@ impl ExtensionHost {
     }
 
     fn load_recent_history() -> Option<HistorySeed> {
-        let home = dirs::home_dir()?;
-
-        let root = home.join(".codex").join("sessions");
+        let root = Self::history_root();
         if !root.exists() {
             return None;
         }
