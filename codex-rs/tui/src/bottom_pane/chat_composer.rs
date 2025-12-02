@@ -1189,23 +1189,17 @@ impl ChatComposer {
     }
 
     fn matches_history_prev(&self, key: &KeyEvent) -> bool {
-        let no_mods = key.modifiers.is_empty();
-        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         self.extension_keys
             .history_prev
             .iter()
             .any(|kb| kb.matches(key))
-            || (matches!(key.code, KeyCode::Up | KeyCode::PageUp) && (no_mods || ctrl))
     }
 
     fn matches_history_next(&self, key: &KeyEvent) -> bool {
-        let no_mods = key.modifiers.is_empty();
-        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         self.extension_keys
             .history_next
             .iter()
             .any(|kb| kb.matches(key))
-            || (matches!(key.code, KeyCode::Down | KeyCode::PageDown) && (no_mods || ctrl))
     }
 
     fn handle_paste_burst_flush(&mut self, now: Instant) -> bool {
