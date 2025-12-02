@@ -1843,13 +1843,19 @@ impl Renderable for ChatComposer {
             let top_y = textarea_rect.y.saturating_sub(1);
             if top_y >= composer_rect.y && top_y < composer_rect.y + composer_rect.height {
                 for x in start_x..end_x {
-                    buf.get_mut(x, top_y).set_symbol(line_symbol);
+                    let cell = buf.get_mut(x, top_y);
+                    if cell.symbol() != line_symbol {
+                        cell.set_symbol(line_symbol);
+                    }
                 }
             }
             let bottom_y = textarea_rect.y + textarea_rect.height;
             if bottom_y < composer_rect.y + composer_rect.height {
                 for x in start_x..end_x {
-                    buf.get_mut(x, bottom_y).set_symbol(line_symbol);
+                    let cell = buf.get_mut(x, bottom_y);
+                    if cell.symbol() != line_symbol {
+                        cell.set_symbol(line_symbol);
+                    }
                 }
             }
         }
