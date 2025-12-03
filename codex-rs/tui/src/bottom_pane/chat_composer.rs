@@ -1597,6 +1597,15 @@ impl ChatComposer {
 
         match *key {
             KeyEvent {
+                code: Delete,
+                modifiers,
+                ..
+            } if modifiers == (Mods::CONTROL | Mods::SHIFT) => {
+                self.textarea.set_text("");
+                self.textarea.set_cursor(0);
+                return true;
+            }
+            KeyEvent {
                 code: PageUp,
                 modifiers: Mods::NONE,
                 ..
