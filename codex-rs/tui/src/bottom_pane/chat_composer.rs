@@ -1650,8 +1650,7 @@ impl ChatComposer {
                 ..
             } => {
                 if plain_or_shift(modifiers) {
-                    self.textarea
-                        .move_cursor_to_beginning_of_line(false /* stay on line */);
+                    self.textarea.move_cursor_to_beginning_of_line(false);
                     return true;
                 }
             }
@@ -1661,8 +1660,7 @@ impl ChatComposer {
                 ..
             } => {
                 if plain_or_shift(modifiers) {
-                    self.textarea
-                        .move_cursor_to_end_of_line(false /* stay on line */);
+                    self.textarea.move_cursor_to_end_of_line(false);
                     return true;
                 }
             }

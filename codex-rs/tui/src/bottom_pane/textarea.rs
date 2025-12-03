@@ -728,8 +728,17 @@ impl TextArea {
     }
 
     pub fn move_cursor_to_end_of_line(&mut self, move_down_at_eol: bool) {
-        let eol = self.end_of_current_line();
-        if move_down_at_eol && self.cursor_pos == eol {
+        let raw_eol = self.end_of_current_line();
+        let mut eol = raw_eol;
+        if eol > 0 && self.text.as_bytes().get(eol.saturating_sub(1)) == Some(&b'\n') {
+            eol = eol.saturating_sub(1);
+        }
+        // When operating on wrapped lines, avoid letting the cursor land beyond the current
+        // terminal row width; the visual line navigation helpers take care of that, but
+        // logical End should keep preferred_col in sync.
+        self.preferred_col = None;
+        let at_eol = self.cursor_pos == raw_eol || self.cursor_pos == eol;
+        if move_down_at_eol && at_eol {
             let next_pos = (self.cursor_pos.saturating_add(1)).min(self.text.len());
             self.set_cursor(self.end_of_line(next_pos));
         } else {
