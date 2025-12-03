@@ -1312,6 +1312,10 @@ impl ChatComposer {
         let now = Instant::now();
         self.handle_paste_burst_flush(now);
 
+        if self.a11y_keyboard_shortcuts && self.handle_a11y_nav(&input) {
+            return (InputResult::None, true);
+        }
+
         if !matches!(input.code, KeyCode::Esc) {
             self.footer_mode = reset_mode_after_activity(self.footer_mode);
         }
@@ -1584,6 +1588,62 @@ impl ChatComposer {
             return true;
         }
 
+        false
+    }
+
+    fn handle_a11y_nav(&mut self, key: &KeyEvent) -> bool {
+        use KeyCode::*;
+        use KeyModifiers as Mods;
+
+        match *key {
+            KeyEvent {
+                code: PageUp,
+                modifiers: Mods::NONE,
+                ..
+            } => {
+                for _ in 0..10 {
+                    self.textarea.move_cursor_up();
+                }
+                return true;
+            }
+            KeyEvent {
+                code: PageDown,
+                modifiers: Mods::NONE,
+                ..
+            } => {
+                for _ in 0..10 {
+                    self.textarea.move_cursor_down();
+                }
+                return true;
+            }
+            KeyEvent {
+                code: Home,
+                modifiers: Mods::CONTROL,
+                ..
+            } => {
+                self.textarea.set_cursor(0);
+                return true;
+            }
+            KeyEvent {
+                code: End,
+                modifiers: Mods::CONTROL,
+                ..
+            } => {
+                let len = self.textarea.text().len();
+                self.textarea.set_cursor(len);
+                return true;
+            }
+            KeyEvent {
+                code: Right,
+                modifiers: Mods::CONTROL,
+                ..
+            } => {
+                let pos = self.textarea.beginning_of_next_word();
+                self.textarea.set_cursor(pos);
+                return true;
+            }
+            _ => {}
+        }
         false
     }
 

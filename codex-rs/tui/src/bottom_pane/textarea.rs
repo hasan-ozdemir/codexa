@@ -895,6 +895,15 @@ impl TextArea {
         self.adjust_pos_out_of_elements(end, false)
     }
 
+    pub(crate) fn beginning_of_next_word(&self) -> usize {
+        let Some(first_non_ws) = self.text[self.cursor_pos..].find(|c: char| !c.is_whitespace())
+        else {
+            return self.text.len();
+        };
+        let start = self.cursor_pos + first_non_ws;
+        self.adjust_pos_out_of_elements(start, false)
+    }
+
     fn adjust_pos_out_of_elements(&self, pos: usize, prefer_start: bool) -> usize {
         if let Some(idx) = self.find_element_containing(pos) {
             let e = &self.elements[idx];
