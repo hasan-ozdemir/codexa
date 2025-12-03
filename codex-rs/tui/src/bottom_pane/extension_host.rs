@@ -457,8 +457,20 @@ impl ExtensionHost {
     fn load_config(scripts: &[PathBuf]) -> ExtensionConfig {
         let cfg = ExtensionConfig {
             external_edit_keys: vec![KeyBinding::ctrl_char('e')],
-            history_prev_keys: vec![KeyBinding::alt_code(KeyCode::PageUp)],
-            history_next_keys: vec![KeyBinding::alt_code(KeyCode::PageDown)],
+            history_prev_keys: vec![
+                KeyBinding {
+                    code: KeyCode::Up,
+                    modifiers: KeyModifiers::NONE,
+                },
+                KeyBinding::alt_code(KeyCode::PageUp),
+            ],
+            history_next_keys: vec![
+                KeyBinding {
+                    code: KeyCode::Down,
+                    modifiers: KeyModifiers::NONE,
+                },
+                KeyBinding::alt_code(KeyCode::PageDown),
+            ],
             history_first_keys: vec![KeyBinding::alt_code(KeyCode::Home)],
             history_last_keys: vec![KeyBinding::alt_code(KeyCode::End)],
             editor_command: None,
@@ -470,7 +482,7 @@ impl ExtensionHost {
             a11y_keyboard_shortcuts: None,
         };
 
-        scripts.iter().fold(cfg, |mut acc, script| {
+        let mut cfg = scripts.iter().fold(cfg, |mut acc, script| {
             let log_path = Self::default_log_path();
             let request = Self::build_request("config", json!({}), &log_path);
             let response = Self::run_script(script, "config", request, &log_path);
@@ -518,7 +530,26 @@ impl ExtensionHost {
                 }
             }
             acc
-        })
+        });
+
+        Self::ensure_history_binding(&mut cfg.history_prev_keys, KeyCode::Up, KeyModifiers::NONE);
+        Self::ensure_history_binding(
+            &mut cfg.history_next_keys,
+            KeyCode::Down,
+            KeyModifiers::NONE,
+        );
+
+        cfg
+    }
+
+    fn ensure_history_binding(keys: &mut Vec<KeyBinding>, code: KeyCode, modifiers: KeyModifiers) {
+        if keys
+            .iter()
+            .any(|kb| kb.code == code && kb.modifiers == modifiers)
+        {
+            return;
+        }
+        keys.push(KeyBinding { code, modifiers });
     }
 
     fn parse_config(value: Value) -> Option<ConfigDelta> {
