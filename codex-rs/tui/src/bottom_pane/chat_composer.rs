@@ -1638,13 +1638,58 @@ impl ChatComposer {
                 modifiers: Mods::CONTROL,
                 ..
             } => {
-                let pos = self.textarea.beginning_of_next_word();
+                let pos = self.next_word_start_space_only();
+                self.textarea.set_cursor(pos);
+                return true;
+            }
+            KeyEvent {
+                code: Left,
+                modifiers: Mods::CONTROL,
+                ..
+            } => {
+                let pos = self.prev_word_start_space_only();
                 self.textarea.set_cursor(pos);
                 return true;
             }
             _ => {}
         }
         false
+    }
+
+    fn next_word_start_space_only(&self) -> usize {
+        let text = self.textarea.text();
+        let mut iter = text.char_indices().skip(self.textarea.cursor());
+        // skip current/leading spaces
+        while let Some((i, ch)) = iter.next() {
+            if ch != ' ' {
+                return i;
+            }
+        }
+        text.len()
+    }
+
+    fn prev_word_start_space_only(&self) -> usize {
+        let text = self.textarea.text();
+        let cur = self.textarea.cursor();
+        if cur == 0 {
+            return 0;
+        }
+        let mut chars: Vec<(usize, char)> = text[..cur].char_indices().collect();
+        while let Some((idx, ch)) = chars.pop() {
+            if ch != ' ' {
+                // walk back to start of this word
+                let mut start = idx;
+                while let Some((pidx, pch)) = chars.last().copied() {
+                    if pch == ' ' {
+                        break;
+                    }
+                    start = pidx;
+                    chars.pop();
+                }
+                return start;
+            }
+        }
+        0
     }
 
     fn handle_shortcut_overlay_key(&mut self, key_event: &KeyEvent) -> bool {
