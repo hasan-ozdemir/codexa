@@ -746,6 +746,7 @@ impl TextArea {
         }
     }
 
+    #[allow(dead_code)]
     pub fn move_cursor_to_visual_line_start(&mut self) {
         if let Some(start) = {
             let cache_ref = self.wrap_cache.borrow();
@@ -761,6 +762,7 @@ impl TextArea {
         self.move_cursor_to_beginning_of_line(false);
     }
 
+    #[allow(dead_code)]
     pub fn move_cursor_to_visual_line_end(&mut self) {
         if let Some(end) = {
             let cache_ref = self.wrap_cache.borrow();
@@ -984,6 +986,7 @@ impl TextArea {
         self.adjust_pos_out_of_elements(end, false)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn beginning_of_next_word(&self) -> usize {
         let Some(first_non_ws) = self.text[self.cursor_pos..].find(|c: char| !c.is_whitespace())
         else {

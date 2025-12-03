@@ -23,12 +23,12 @@ function handleConfig() {
   respond({
     status: "ok",
     payload: {
-      hide_edit_marker: parseBoolEnv("a11y_hide_edit_marker", true),
-      hide_prompt_hints: parseBoolEnv("a11y_hide_prompt_hints", true),
-      hide_statusbar_hints: parseBoolEnv("a11y_hide_statusbar_hints", true),
-      align_left: parseBoolEnv("a11y_editor_align_left", true),
-      editor_borderline: parseBoolEnv("a11y_editor_borderline", true),
-      a11y_keyboard_shortcuts: parseBoolEnv("a11y_keyboard_shortcuts", true),
+      hide_edit_marker: parseBoolEnv("a11y_hide_edit_marker", false),
+      hide_prompt_hints: parseBoolEnv("a11y_hide_prompt_hints", false),
+      hide_statusbar_hints: parseBoolEnv("a11y_hide_statusbar_hints", false),
+      align_left: parseBoolEnv("a11y_editor_align_left", false),
+      editor_borderline: parseBoolEnv("a11y_editor_borderline", false),
+      a11y_keyboard_shortcuts: parseBoolEnv("a11y_keyboard_shortcuts", false),
     },
   });
 }

@@ -526,19 +526,19 @@ impl ExtensionHost {
         let mut cfg = ConfigDelta::default();
 
         if let Some(keys) = obj.get("external_edit_keys") {
-            cfg.external_edit_keys = Self::parse_key_list(keys);
+            cfg.external_edit_keys = Some(Self::parse_key_list(keys));
         }
         if let Some(keys) = obj.get("history_prev_keys") {
-            cfg.history_prev_keys = Self::parse_key_list(keys);
+            cfg.history_prev_keys = Some(Self::parse_key_list(keys));
         }
         if let Some(keys) = obj.get("history_next_keys") {
-            cfg.history_next_keys = Self::parse_key_list(keys);
+            cfg.history_next_keys = Some(Self::parse_key_list(keys));
         }
         if let Some(keys) = obj.get("history_first_keys") {
-            cfg.history_first_keys = Self::parse_key_list(keys);
+            cfg.history_first_keys = Some(Self::parse_key_list(keys));
         }
         if let Some(keys) = obj.get("history_last_keys") {
-            cfg.history_last_keys = Self::parse_key_list(keys);
+            cfg.history_last_keys = Some(Self::parse_key_list(keys));
         }
         if let Some(cmd_val) = obj.get("editor_command") {
             cfg.editor_command = Self::parse_editor_command(cmd_val);
@@ -791,6 +791,7 @@ impl KeyBinding {
         }
     }
 
+    #[allow(dead_code)]
     fn ctrl_code(code: KeyCode) -> Self {
         Self {
             code,

@@ -107,6 +107,7 @@ pub(crate) struct ChatComposer {
     dismissed_file_popup_token: Option<String>,
     current_file_query: Option<String>,
     pending_pastes: Vec<(String, String)>,
+    large_paste_counters: HashMap<usize, usize>,
     has_focus: bool,
     attached_images: Vec<AttachedImage>,
     placeholder_text: String,
@@ -119,6 +120,7 @@ pub(crate) struct ChatComposer {
     footer_mode: FooterMode,
     footer_hint_override: Option<Vec<(String, String)>>,
     context_window_percent: Option<i64>,
+    context_window_used_tokens: Option<i64>,
     extension_host: ExtensionHost,
     extension_keys: ExtensionKeyConfig,
     hide_edit_marker: bool,
@@ -176,6 +178,7 @@ impl ChatComposer {
             dismissed_file_popup_token: None,
             current_file_query: None,
             pending_pastes: Vec::new(),
+            large_paste_counters: HashMap::new(),
             has_focus: has_input_focus,
             attached_images: Vec::new(),
             placeholder_text,
@@ -186,26 +189,27 @@ impl ChatComposer {
             footer_mode: FooterMode::ShortcutSummary,
             footer_hint_override: None,
             context_window_percent: None,
+            context_window_used_tokens: None,
             extension_host,
             extension_keys: ExtensionKeyConfig::default(),
             hide_edit_marker: cfg
                 .hide_edit_marker
-                .unwrap_or_else(|| env_bool("a11y_hide_edit_marker", true)),
+                .unwrap_or_else(|| env_bool("a11y_hide_edit_marker", false)),
             hide_prompt_hints: cfg
                 .hide_prompt_hints
-                .unwrap_or_else(|| env_bool("a11y_hide_prompt_hints", true)),
+                .unwrap_or_else(|| env_bool("a11y_hide_prompt_hints", false)),
             hide_statusbar_hints: cfg
                 .hide_statusbar_hints
-                .unwrap_or_else(|| env_bool("a11y_hide_statusbar_hints", true)),
+                .unwrap_or_else(|| env_bool("a11y_hide_statusbar_hints", false)),
             align_left: cfg
                 .align_left
-                .unwrap_or_else(|| env_bool("a11y_editor_align_left", true)),
+                .unwrap_or_else(|| env_bool("a11y_editor_align_left", false)),
             editor_borderline: cfg
                 .editor_borderline
-                .unwrap_or_else(|| env_bool("a11y_editor_borderline", true)),
+                .unwrap_or_else(|| env_bool("a11y_editor_borderline", false)),
             a11y_keyboard_shortcuts: cfg
                 .a11y_keyboard_shortcuts
-                .unwrap_or_else(|| env_bool("a11y_keyboard_shortcuts", true)),
+                .unwrap_or_else(|| env_bool("a11y_keyboard_shortcuts", false)),
         };
         this.extension_keys = this.load_extension_keys();
         // Apply configuration via the setter to keep side-effects centralized.
@@ -272,7 +276,7 @@ impl ChatComposer {
     pub fn handle_paste(&mut self, pasted: String) -> bool {
         let char_count = pasted.chars().count();
         if char_count > LARGE_PASTE_CHAR_THRESHOLD {
-            let placeholder = format!("[Pasted Content {char_count} chars]");
+            let placeholder = self.next_large_paste_placeholder(char_count);
             self.textarea.insert_element(&placeholder);
             self.pending_pastes.push((placeholder, pasted));
         } else if char_count > 1 && self.handle_paste_image_path(pasted.clone()) {
@@ -410,6 +414,17 @@ impl ChatComposer {
             self.footer_mode = reset_mode_after_activity(self.footer_mode);
         }
         self.set_has_focus(has_focus);
+    }
+
+    fn next_large_paste_placeholder(&mut self, char_count: usize) -> String {
+        let base = format!("[Pasted Content {char_count} chars]");
+        let next_suffix = self.large_paste_counters.entry(char_count).or_insert(0);
+        *next_suffix += 1;
+        if *next_suffix == 1 {
+            base
+        } else {
+            format!("{base} #{next_suffix}")
+        }
     }
 
     pub(crate) fn insert_str(&mut self, text: &str) {
@@ -1762,7 +1777,7 @@ impl ChatComposer {
         let mut chars: Vec<(usize, char)> = text[..cur].char_indices().collect();
 
         // 1) skip trailing spaces to the left of cursor
-        while let Some((idx, ch)) = chars.last().copied() {
+        while let Some((_, ch)) = chars.last().copied() {
             if ch.is_whitespace() {
                 chars.pop();
             } else {
@@ -1772,7 +1787,7 @@ impl ChatComposer {
 
         // 2) walk back through the previous word to its first char
         let mut start = 0usize;
-        while let Some((idx, ch)) = chars.pop() {
+        while let Some((idx, _)) = chars.pop() {
             start = idx;
             if chars
                 .last()
@@ -1841,6 +1856,7 @@ impl ChatComposer {
             use_shift_enter_hint: self.use_shift_enter_hint,
             is_task_running: self.is_task_running,
             context_window_percent: self.context_window_percent,
+            context_window_used_tokens: self.context_window_used_tokens,
             hide_statusbar_hints: self.hide_statusbar_hints,
         }
     }
@@ -1972,10 +1988,13 @@ impl ChatComposer {
         self.is_task_running = running;
     }
 
-    pub(crate) fn set_context_window_percent(&mut self, percent: Option<i64>) {
-        if self.context_window_percent != percent {
-            self.context_window_percent = percent;
+    pub(crate) fn set_context_window(&mut self, percent: Option<i64>, used_tokens: Option<i64>) {
+        if self.context_window_percent == percent && self.context_window_used_tokens == used_tokens
+        {
+            return;
         }
+        self.context_window_percent = percent;
+        self.context_window_used_tokens = used_tokens;
     }
 
     pub(crate) fn set_esc_backtrack_hint(&mut self, show: bool) {
@@ -2096,7 +2115,7 @@ impl Renderable for ChatComposer {
             buf.set_span(
                 textarea_rect.x - LIVE_PREFIX_COLS,
                 textarea_rect.y,
-                &">".bold(),
+                &"›".bold(),
                 textarea_rect.width,
             );
         }
@@ -3147,6 +3166,83 @@ mod tests {
                 (" and ".to_string(), 0),
             ]
         );
+    }
+
+    #[test]
+    fn deleting_duplicate_length_pastes_removes_only_target() {
+        use crossterm::event::KeyCode;
+        use crossterm::event::KeyEvent;
+        use crossterm::event::KeyModifiers;
+
+        let (tx, _rx) = unbounded_channel::<AppEvent>();
+        let sender = AppEventSender::new(tx);
+        let mut composer = ChatComposer::new(
+            true,
+            sender,
+            false,
+            "Ask Codex to do anything".to_string(),
+            false,
+        );
+
+        let paste = "x".repeat(LARGE_PASTE_CHAR_THRESHOLD + 4);
+        let placeholder_base = format!("[Pasted Content {} chars]", paste.chars().count());
+        let placeholder_second = format!("{placeholder_base} #2");
+
+        composer.handle_paste(paste.clone());
+        composer.handle_paste(paste.clone());
+        assert_eq!(
+            composer.textarea.text(),
+            format!("{placeholder_base}{placeholder_second}")
+        );
+        assert_eq!(composer.pending_pastes.len(), 2);
+
+        composer.textarea.set_cursor(composer.textarea.text().len());
+        composer.handle_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+
+        assert_eq!(composer.textarea.text(), placeholder_base);
+        assert_eq!(composer.pending_pastes.len(), 1);
+        assert_eq!(composer.pending_pastes[0].0, placeholder_base);
+        assert_eq!(composer.pending_pastes[0].1, paste);
+    }
+
+    #[test]
+    fn large_paste_numbering_does_not_reuse_after_deletion() {
+        use crossterm::event::KeyCode;
+        use crossterm::event::KeyEvent;
+        use crossterm::event::KeyModifiers;
+
+        let (tx, _rx) = unbounded_channel::<AppEvent>();
+        let sender = AppEventSender::new(tx);
+        let mut composer = ChatComposer::new(
+            true,
+            sender,
+            false,
+            "Ask Codex to do anything".to_string(),
+            false,
+        );
+
+        let paste = "x".repeat(LARGE_PASTE_CHAR_THRESHOLD + 4);
+        let base = format!("[Pasted Content {} chars]", paste.chars().count());
+        let second = format!("{base} #2");
+        let third = format!("{base} #3");
+
+        composer.handle_paste(paste.clone());
+        composer.handle_paste(paste.clone());
+        assert_eq!(composer.textarea.text(), format!("{base}{second}"));
+
+        composer.textarea.set_cursor(base.len());
+        composer.handle_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(composer.textarea.text(), second);
+        assert_eq!(composer.pending_pastes.len(), 1);
+        assert_eq!(composer.pending_pastes[0].0, second);
+
+        composer.textarea.set_cursor(composer.textarea.text().len());
+        composer.handle_paste(paste);
+
+        assert_eq!(composer.textarea.text(), format!("{second}{third}"));
+        assert_eq!(composer.pending_pastes.len(), 2);
+        assert_eq!(composer.pending_pastes[0].0, second);
+        assert_eq!(composer.pending_pastes[1].0, third);
     }
 
     #[test]
