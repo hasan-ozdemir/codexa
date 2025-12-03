@@ -1686,6 +1686,15 @@ impl ChatComposer {
                 }
                 return true;
             }
+            KeyEvent {
+                code: KeyCode::Char('z'),
+                modifiers: Mods::CONTROL,
+                ..
+            } => {
+                if self.textarea.undo() {
+                    return true;
+                }
+            }
             _ => {}
         }
         false

@@ -34,12 +34,21 @@ pub(crate) struct TextArea {
     preferred_col: Option<usize>,
     elements: Vec<TextElement>,
     kill_buffer: String,
+    undo_stack: Vec<UndoState>,
 }
 
 #[derive(Debug, Clone)]
 struct WrapCache {
     width: u16,
     lines: Vec<Range<usize>>,
+}
+
+#[derive(Debug, Clone)]
+struct UndoState {
+    text: String,
+    cursor_pos: usize,
+    elements: Vec<TextElement>,
+    kill_buffer: String,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -57,10 +66,12 @@ impl TextArea {
             preferred_col: None,
             elements: Vec::new(),
             kill_buffer: String::new(),
+            undo_stack: Vec::new(),
         }
     }
 
     pub fn set_text(&mut self, text: &str) {
+        self.record_snapshot();
         self.text = text.to_string();
         self.cursor_pos = self.cursor_pos.clamp(0, self.text.len());
         self.wrap_cache.replace(None);
@@ -78,6 +89,7 @@ impl TextArea {
     }
 
     pub fn insert_str_at(&mut self, pos: usize, text: &str) {
+        self.record_snapshot();
         let pos = self.clamp_pos_for_insertion(pos);
         self.text.insert_str(pos, text);
         self.wrap_cache.replace(None);
@@ -95,6 +107,7 @@ impl TextArea {
 
     fn replace_range_raw(&mut self, range: std::ops::Range<usize>, text: &str) {
         assert!(range.start <= range.end);
+        self.record_snapshot();
         let start = range.start.clamp(0, self.text.len());
         let end = range.end.clamp(0, self.text.len());
         let removed_len = end - start;
@@ -449,6 +462,7 @@ impl TextArea {
         if n == 0 || self.cursor_pos >= self.text.len() {
             return;
         }
+        self.record_snapshot();
         let mut target = self.cursor_pos;
         for _ in 0..n {
             target = self.next_atomic_boundary(target);
@@ -460,6 +474,7 @@ impl TextArea {
     }
 
     pub fn delete_backward_word(&mut self) {
+        self.record_snapshot();
         let start = self.beginning_of_previous_word();
         self.kill_range(start..self.cursor_pos);
     }
@@ -470,6 +485,7 @@ impl TextArea {
     /// by `end_of_next_word()`. Any whitespace (including newlines) between the cursor and that
     /// word is included in the deletion.
     pub fn delete_forward_word(&mut self) {
+        self.record_snapshot();
         let end = self.end_of_next_word();
         if end > self.cursor_pos {
             self.kill_range(self.cursor_pos..end);
@@ -489,6 +505,7 @@ impl TextArea {
         };
 
         if let Some(range) = range {
+            self.record_snapshot();
             self.kill_range(range);
         }
     }
@@ -502,6 +519,7 @@ impl TextArea {
         };
 
         if let Some(range) = range {
+            self.record_snapshot();
             self.kill_range(range);
         }
     }
@@ -527,6 +545,33 @@ impl TextArea {
 
         self.kill_buffer = removed;
         self.replace_range_raw(range, "");
+    }
+
+    pub fn undo(&mut self) -> bool {
+        let Some(state) = self.undo_stack.pop() else {
+            return false;
+        };
+        self.text = state.text;
+        self.cursor_pos = state.cursor_pos.min(self.text.len());
+        self.elements = state.elements;
+        self.kill_buffer = state.kill_buffer;
+        self.wrap_cache.replace(None);
+        self.preferred_col = None;
+        true
+    }
+
+    fn record_snapshot(&mut self) {
+        const UNDO_LIMIT: usize = 100;
+        let snapshot = UndoState {
+            text: self.text.clone(),
+            cursor_pos: self.cursor_pos,
+            elements: self.elements.clone(),
+            kill_buffer: self.kill_buffer.clone(),
+        };
+        self.undo_stack.push(snapshot);
+        if self.undo_stack.len() > UNDO_LIMIT {
+            self.undo_stack.remove(0);
+        }
     }
 
     /// Move the cursor left by a single grapheme cluster.
