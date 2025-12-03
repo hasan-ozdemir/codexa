@@ -1658,13 +1658,25 @@ impl ChatComposer {
 
     fn next_word_start_space_only(&self) -> usize {
         let text = self.textarea.text();
-        let mut iter = text.char_indices().skip(self.textarea.cursor());
-        // skip current/leading spaces
+        let cursor = self.textarea.cursor();
+        let mut iter = text[cursor..].char_indices();
+
+        // 1) skip over the rest of the current word (non-space)
+        let mut offset = cursor;
         while let Some((i, ch)) = iter.next() {
-            if ch != ' ' {
-                return i;
+            offset = cursor + i;
+            if ch.is_whitespace() {
+                break;
             }
         }
+
+        // 2) skip spaces to the start of the next word
+        for (i, ch) in text[offset..].char_indices() {
+            if !ch.is_whitespace() {
+                return offset + i;
+            }
+        }
+
         text.len()
     }
 
@@ -1675,21 +1687,28 @@ impl ChatComposer {
             return 0;
         }
         let mut chars: Vec<(usize, char)> = text[..cur].char_indices().collect();
-        while let Some((idx, ch)) = chars.pop() {
-            if ch != ' ' {
-                // walk back to start of this word
-                let mut start = idx;
-                while let Some((pidx, pch)) = chars.last().copied() {
-                    if pch == ' ' {
-                        break;
-                    }
-                    start = pidx;
-                    chars.pop();
-                }
-                return start;
+
+        // 1) skip trailing spaces to the left of cursor
+        while let Some((idx, ch)) = chars.last().copied() {
+            if ch.is_whitespace() {
+                chars.pop();
+            } else {
+                break;
             }
         }
-        0
+
+        // 2) walk back through the previous word to its first char
+        let mut start = 0usize;
+        while let Some((idx, ch)) = chars.pop() {
+            start = idx;
+            if chars
+                .last()
+                .map_or(true, |&(_, prev_ch)| prev_ch.is_whitespace())
+            {
+                break;
+            }
+        }
+        start
     }
 
     fn handle_shortcut_overlay_key(&mut self, key_event: &KeyEvent) -> bool {
