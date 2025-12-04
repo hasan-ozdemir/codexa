@@ -81,7 +81,7 @@ function handleNotify(payload) {
     respond({ status: "skip" });
     return;
   }
-  const event = payload && payload.event;
+  const event = (payload && payload.event) || req.event;
   if (!event) {
     log("notify error: missing event");
     respond({ status: "error", message: "missing event" });
@@ -125,3 +125,4 @@ function main() {
 }
 
 main();
+
