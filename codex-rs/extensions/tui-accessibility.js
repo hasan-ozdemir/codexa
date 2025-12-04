@@ -46,42 +46,53 @@ function handleConfig() {
   });
 }
 
+let currentSound = null;
+
 function playSound(file) {
   const path = require("path");
-  const { spawnSync } = require("child_process");
+  const { spawn } = require("child_process");
   const full = path.join(__dirname, "sounds", file);
-  const result = spawnSync(
-    "powershell.exe",
-    [
-      "-NoProfile",
-      "-NonInteractive",
-      "-Command",
-      `(New-Object Media.SoundPlayer '${full.replace(/'/g, "''")}').PlaySync()`,
-    ],
-    { stdio: "ignore" }
-  );
-  if (result.error || result.status !== 0) {
-    log(`playSound failed for ${file}: ${result.error || "status " + result.status}`);
-    const fb = spawnSync(
+
+  try {
+    if (currentSound && !currentSound.killed) {
+      currentSound.kill();
+    }
+    const child = spawn(
       "powershell.exe",
-      ["-NoProfile", "-NonInteractive", "-Command", "[console]::beep(880,120)"],
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `(New-Object Media.SoundPlayer '${full.replace(/'/g, "''")}').PlaySync()`,
+      ],
       { stdio: "ignore" }
     );
-    if (fb.error || fb.status !== 0) {
-      log(`fallback beep failed: ${fb.error || "status " + fb.status}`);
-      return false;
-    }
+    currentSound = child;
+    child.on("exit", (code) => {
+      if (currentSound === child) {
+        currentSound = null;
+      }
+      if (code !== 0) {
+        log(`playSound exit ${code} for ${file}`);
+      }
+    });
+    child.on("error", (err) => {
+      log(`playSound failed for ${file}: ${err}`);
+    });
+    return true;
+  } catch (err) {
+    log(`playSound threw for ${file}: ${err}`);
+    return false;
   }
-  return true;
 }
 
-function handleNotify(payload) {
+function handleNotify(payload, req) {
   if (!parseBoolEnv("a11y_audio_cues", false)) {
     log("notify skipped: a11y_audio_cues disabled");
     respond({ status: "skip" });
     return;
   }
-  const event = (payload && payload.event) || req.event;
+  const event = (payload && payload.event) || (req && req.event);
   if (!event) {
     log("notify error: missing event");
     respond({ status: "error", message: "missing event" });
@@ -118,11 +129,13 @@ function main() {
     case "config":
       return handleConfig();
     case "notify":
-      return handleNotify(req.payload || {});
+      return handleNotify(req.payload || {}, req);
     default:
       respond({ status: "skip" });
   }
 }
 
 main();
+
+
 
