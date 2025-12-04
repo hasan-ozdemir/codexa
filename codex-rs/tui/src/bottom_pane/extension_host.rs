@@ -204,10 +204,19 @@ impl ExtensionHost {
     }
 
     pub(crate) fn notify_event(&self, event: &str) {
-        for script in &self.scripts {
-            let request = Self::build_request("notify", json!({ "event": event }), &self.log_path);
-            let _ = Self::run_script(script, "notify", request, &self.log_path);
+        if self.scripts.is_empty() {
+            return;
         }
+        let scripts = self.scripts.clone();
+        let log_path = self.log_path.clone();
+        let event_string = event.to_string();
+        std::thread::spawn(move || {
+            let payload = json!({ "event": event_string });
+            for script in scripts {
+                let request = ExtensionHost::build_request("notify", payload.clone(), &log_path);
+                let _ = ExtensionHost::run_script(&script, "notify", request, &log_path);
+            }
+        });
     }
 
     pub(crate) fn history_push(&self, text: &str) {
