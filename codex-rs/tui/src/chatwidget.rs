@@ -310,6 +310,8 @@ pub(crate) struct ChatWidget {
     pending_notification: Option<Notification>,
     // Simple review mode flag; used to adjust layout and banners.
     is_review_mode: bool,
+    // Avoid firing audio cues until first agent stream starts.
+    audio_cues_ready: bool,
     // Snapshot of token usage to restore after review mode exits.
     pre_review_token_info: Option<Option<TokenUsageInfo>>,
     // Whether to add a final message separator after the last message
@@ -358,7 +360,9 @@ impl ChatWidget {
         if let Some(mut controller) = self.stream_controller.take()
             && let Some(cell) = controller.finalize()
         {
-            self.bottom_pane.notify_extensions("line_end");
+            if self.audio_cues_ready {
+                self.bottom_pane.notify_extensions("line_end");
+            }
             self.add_boxed_history(cell);
         }
     }
@@ -436,12 +440,14 @@ impl ChatWidget {
         }
         self.flush_answer_stream_with_separator();
         self.handle_stream_finished();
-        self.bottom_pane.notify_extensions("completion_end");
+        if self.audio_cues_ready {
+            self.bottom_pane.notify_extensions("completion_end");
+        }
         self.request_redraw();
     }
 
     fn on_agent_message_delta(&mut self, delta: String) {
-        if delta.contains('\n') {
+        if delta.contains('\n') && self.audio_cues_ready {
             self.bottom_pane.notify_extensions("line_end");
         }
         self.handle_streaming_delta(delta);
@@ -929,7 +935,9 @@ impl ChatWidget {
             let (cell, is_idle) = controller.on_commit_tick();
             if let Some(cell) = cell {
                 self.bottom_pane.hide_status_indicator();
-                self.bottom_pane.notify_extensions("line_end");
+                if self.audio_cues_ready {
+                    self.bottom_pane.notify_extensions("line_end");
+                }
                 self.add_boxed_history(cell);
             }
             if is_idle {
@@ -973,6 +981,10 @@ impl ChatWidget {
     fn handle_streaming_delta(&mut self, delta: String) {
         // Before streaming agent content, flush any active exec cell group.
         self.flush_active_cell();
+
+        if self.config.bottom_pane.a11y_audio_cues && !self.audio_cues_ready {
+            self.audio_cues_ready = true;
+        }
 
         if self.stream_controller.is_none() {
             if self.needs_final_message_separator {
@@ -1284,6 +1296,7 @@ impl ChatWidget {
             suppress_session_configured_redraw: false,
             pending_notification: None,
             is_review_mode: false,
+            audio_cues_ready: false,
             pre_review_token_info: None,
             needs_final_message_separator: false,
             last_rendered_width: std::cell::Cell::new(None),
@@ -1361,6 +1374,7 @@ impl ChatWidget {
             suppress_session_configured_redraw: true,
             pending_notification: None,
             is_review_mode: false,
+            audio_cues_ready: false,
             pre_review_token_info: None,
             needs_final_message_separator: false,
             last_rendered_width: std::cell::Cell::new(None),
