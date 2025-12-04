@@ -25,7 +25,6 @@ set "a11y_editor_align_left=true"
 set "a11y_editor_borderline=true"
 set "a11y_keyboard_shortcuts=true"
 set "a11y_audio_cues=true"
-set "a11y_keyboard_shortcuts=true"
 
 :parse_args
 if "%~1"=="" goto after_parse
@@ -100,7 +99,7 @@ if %profile_count% GTR 1 (
 )
 
 cls
-set "CALLDIR=%REPO_ROOT%\codex-rs"
+set "CALLDIR=%REPO_ROOT%"
 set "CLI_ARGS="
 if defined resume_cmd set "CLI_ARGS=!CLI_ARGS! !resume_cmd!"
 set "CLI_ARGS=!CLI_ARGS! --cd \"!CALLDIR!\""
