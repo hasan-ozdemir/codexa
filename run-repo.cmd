@@ -23,6 +23,8 @@ set "a11y_hide_statusbar_hints=true"
 set "a11y_editor_align_left=true"
 set "a11y_editor_borderline=true"
 set "a11y_keyboard_shortcuts=true"
+set "a11y_audio_cues=true"
+set "a11y_keyboard_shortcuts=true"
 
 :parse_args
 if "%~1"=="" goto after_parse
