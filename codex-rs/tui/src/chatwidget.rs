@@ -1008,10 +1008,13 @@ impl ChatWidget {
                 self.last_rendered_width.get().map(|w| w.saturating_sub(2)),
             ));
         }
-        if let Some(controller) = self.stream_controller.as_mut()
-            && controller.push(&delta)
-        {
-            self.app_event_tx.send(AppEvent::StartCommitAnimation);
+        if let Some(controller) = self.stream_controller.as_mut() {
+            if controller.push(&delta) {
+                if self.audio_cues_ready {
+                    self.bottom_pane.notify_extensions("line_end");
+                }
+                self.app_event_tx.send(AppEvent::StartCommitAnimation);
+            }
         }
         self.request_redraw();
     }
