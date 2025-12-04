@@ -371,8 +371,14 @@ impl ChatWidget {
     }
 
     fn set_status_header(&mut self, header: String) {
+        if self.current_status_header == header {
+            return;
+        }
         self.current_status_header = header.clone();
         self.bottom_pane.update_status_header(header);
+        if self.audio_cues_ready {
+            self.bottom_pane.notify_extensions("line_end");
+        }
     }
 
     // --- Small event handlers ---
