@@ -284,6 +284,7 @@ pub(crate) struct ChatWidget {
     stream_controller: Option<StreamController>,
     running_commands: HashMap<String, RunningCommand>,
     suppressed_exec_calls: HashSet<String>,
+    exec_line_start_pending: HashMap<String, bool>,
     last_unified_wait: Option<UnifiedExecWaitState>,
     task_complete_pending: bool,
     mcp_startup_status: Option<HashMap<String, McpStartupStatus>>,
@@ -803,15 +804,36 @@ impl ChatWidget {
 
     fn on_exec_command_begin(&mut self, ev: ExecCommandBeginEvent) {
         self.flush_answer_stream_with_separator();
+        self.exec_line_start_pending
+            .insert(ev.call_id.clone(), true);
         let ev2 = ev.clone();
         self.defer_or_handle(|q| q.push_exec_begin(ev), |s| s.handle_exec_begin_now(ev2));
     }
 
     fn on_exec_command_output_delta(
         &mut self,
-        _ev: codex_core::protocol::ExecCommandOutputDeltaEvent,
+        ev: codex_core::protocol::ExecCommandOutputDeltaEvent,
     ) {
-        // TODO: Handle streaming exec output if/when implemented
+        if !self.audio_cues_ready {
+            return;
+        }
+        let pending = self
+            .exec_line_start_pending
+            .entry(ev.call_id.clone())
+            .or_insert(true);
+        let chunk = String::from_utf8_lossy(&ev.chunk);
+        let mut starts = 0usize;
+        for ch in chunk.chars() {
+            if ch == '\n' {
+                *pending = true;
+            } else if *pending {
+                starts += 1;
+                *pending = false;
+            }
+        }
+        for _ in 0..starts {
+            self.bottom_pane.notify_extensions("line_added");
+        }
     }
 
     fn on_patch_apply_begin(&mut self, event: PatchApplyBeginEvent) {
@@ -1018,6 +1040,7 @@ impl ChatWidget {
         if self.suppressed_exec_calls.remove(&ev.call_id) {
             return;
         }
+        self.exec_line_start_pending.remove(&ev.call_id);
         let (command, parsed, source) = match running {
             Some(rc) => (rc.command, rc.parsed_cmd, rc.source),
             None => (
@@ -1288,6 +1311,7 @@ impl ChatWidget {
             stream_controller: None,
             running_commands: HashMap::new(),
             suppressed_exec_calls: HashSet::new(),
+            exec_line_start_pending: HashMap::new(),
             last_unified_wait: None,
             task_complete_pending: false,
             mcp_startup_status: None,
@@ -1367,6 +1391,7 @@ impl ChatWidget {
             stream_controller: None,
             running_commands: HashMap::new(),
             suppressed_exec_calls: HashSet::new(),
+            exec_line_start_pending: HashMap::new(),
             last_unified_wait: None,
             task_complete_pending: false,
             mcp_startup_status: None,
