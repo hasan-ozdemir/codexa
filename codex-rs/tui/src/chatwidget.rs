@@ -362,15 +362,8 @@ impl ChatWidget {
     fn flush_answer_stream_with_separator(&mut self) {
         if let Some(mut controller) = self.stream_controller.take() {
             if let Some(cell) = controller.finalize() {
-                if self.audio_cues_ready {
-                    let lines = cell.display_lines(u16::MAX).len().max(1);
-                    for _ in 0..lines {
-                        self.bottom_pane.notify_extensions("line_added");
-                    }
-                }
                 self.add_boxed_history_with_audio(cell, false);
             }
-            self.stream_line_started = false;
         }
     }
 
@@ -1698,6 +1691,8 @@ impl ChatWidget {
         }
 
         self.audio_cues_armed = true;
+        // Arm readiness immediately so the very first incoming delta can trigger audio cues.
+        self.audio_cues_ready = true;
 
         let mut items: Vec<UserInput> = Vec::new();
 
