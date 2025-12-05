@@ -961,6 +961,7 @@ impl ChatWidget {
             let (cell, _line_count, is_idle) = controller.on_commit_tick();
             if let Some(cell) = cell {
                 self.bottom_pane.hide_status_indicator();
+                // line_added already emitted when lines were enqueued
                 self.add_boxed_history_with_audio(cell, false);
             }
             if is_idle {
@@ -1022,9 +1023,9 @@ impl ChatWidget {
             ));
         }
         if let Some(controller) = self.stream_controller.as_mut() {
-            let (lines_completed, line_starts) = controller.push(&delta);
-            if self.audio_cues_ready && !from_replay && line_starts > 0 {
-                for _ in 0..line_starts {
+            let lines_completed = controller.push(&delta);
+            if self.audio_cues_ready && !from_replay && lines_completed > 0 {
+                for _ in 0..lines_completed {
                     self.bottom_pane.notify_extensions("line_added");
                 }
             }
