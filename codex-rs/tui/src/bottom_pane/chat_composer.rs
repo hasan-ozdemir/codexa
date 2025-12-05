@@ -123,6 +123,7 @@ pub(crate) struct ChatComposer {
     context_window_used_tokens: Option<i64>,
     extension_host: ExtensionHost,
     extension_keys: ExtensionKeyConfig,
+    skills_enabled: bool,
     hide_edit_marker: bool,
     hide_prompt_hints: bool,
     hide_statusbar_hints: bool,
@@ -195,6 +196,7 @@ impl ChatComposer {
             context_window_used_tokens: None,
             extension_host,
             extension_keys: ExtensionKeyConfig::default(),
+            skills_enabled: false,
             hide_edit_marker: cfg
                 .hide_edit_marker
                 .unwrap_or_else(|| env_bool("a11y_hide_edit_marker", false)),
@@ -221,6 +223,11 @@ impl ChatComposer {
         // Apply configuration via the setter to keep side-effects centralized.
         this.set_disable_paste_burst(disable_paste_burst);
         this
+    }
+
+    pub(crate) fn set_skill_mentions(&mut self, skills: Option<Vec<codex_core::skills::model::SkillMetadata>>) {
+        // Skills are considered enabled if any metadata is provided.
+        self.skills_enabled = skills.as_ref().map_or(false, |s| !s.is_empty());
     }
 
     fn layout_areas(&self, area: Rect) -> [Rect; 3] {
@@ -1984,7 +1991,8 @@ impl ChatComposer {
             }
             _ => {
                 if is_editing_slash_command_name {
-                    let mut command_popup = CommandPopup::new(self.custom_prompts.clone());
+                    let mut command_popup =
+                        CommandPopup::new(self.custom_prompts.clone(), self.skills_enabled);
                     command_popup.on_composer_text_change(first_line.to_string());
                     self.active_popup = ActivePopup::Command(command_popup);
                 }
