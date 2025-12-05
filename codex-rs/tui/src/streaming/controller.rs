@@ -21,8 +21,8 @@ impl StreamController {
         }
     }
 
-    /// Push a delta; if it contains a newline, commit completed lines and start animation.
-    pub(crate) fn push(&mut self, delta: &str) -> bool {
+    /// Push a delta; return the number of newly completed lines that were enqueued.
+    pub(crate) fn push(&mut self, delta: &str) -> usize {
         let state = &mut self.state;
         if !delta.is_empty() {
             state.has_seen_delta = true;
@@ -31,11 +31,12 @@ impl StreamController {
         if delta.contains('\n') {
             let newly_completed = state.collector.commit_complete_lines();
             if !newly_completed.is_empty() {
+                let count = newly_completed.len();
                 state.enqueue(newly_completed);
-                return true;
+                return count;
             }
         }
-        false
+        0
     }
 
     /// Finalize the active stream. Drain and emit now.

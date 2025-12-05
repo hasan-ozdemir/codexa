@@ -99,7 +99,7 @@ function handleNotify(payload, req) {
     return;
   }
   log(`notify event=${event}`);
-  if (event === "line_end") {
+  if (event === "line_end" || event === "line_added") {
     const ok = playSound("PushButtonUp.wav");
     respond(ok ? { status: "ok" } : { status: "error", message: "sound failed" });
     return;

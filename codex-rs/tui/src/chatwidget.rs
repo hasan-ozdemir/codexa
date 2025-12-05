@@ -364,7 +364,7 @@ impl ChatWidget {
             && let Some(cell) = controller.finalize()
         {
             if self.audio_cues_ready {
-                self.bottom_pane.notify_extensions("line_end");
+                self.bottom_pane.notify_extensions("line_added");
             }
             self.add_boxed_history(cell);
         }
@@ -377,7 +377,7 @@ impl ChatWidget {
         self.current_status_header = header.clone();
         self.bottom_pane.update_status_header(header);
         if self.audio_cues_ready {
-            self.bottom_pane.notify_extensions("line_end");
+            self.bottom_pane.notify_extensions("line_added");
         }
     }
 
@@ -456,9 +456,6 @@ impl ChatWidget {
     }
 
     fn on_agent_message_delta(&mut self, delta: String, from_replay: bool) {
-        if delta.contains('\n') && self.audio_cues_ready {
-            self.bottom_pane.notify_extensions("line_end");
-        }
         self.handle_streaming_delta(delta, from_replay);
     }
 
@@ -944,9 +941,6 @@ impl ChatWidget {
             let (cell, is_idle) = controller.on_commit_tick();
             if let Some(cell) = cell {
                 self.bottom_pane.hide_status_indicator();
-                if self.audio_cues_ready {
-                    self.bottom_pane.notify_extensions("line_end");
-                }
                 self.add_boxed_history(cell);
             }
             if is_idle {
@@ -1009,9 +1003,12 @@ impl ChatWidget {
             ));
         }
         if let Some(controller) = self.stream_controller.as_mut() {
-            if controller.push(&delta) {
+            let lines_added = controller.push(&delta);
+            if lines_added > 0 {
                 if self.audio_cues_ready {
-                    self.bottom_pane.notify_extensions("line_end");
+                    for _ in 0..lines_added {
+                        self.bottom_pane.notify_extensions("line_added");
+                    }
                 }
                 self.app_event_tx.send(AppEvent::StartCommitAnimation);
             }
