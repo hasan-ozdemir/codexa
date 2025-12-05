@@ -105,7 +105,7 @@ function handleNotify(payload, req) {
     return;
   }
   if (event === "conversation_interrupted") {
-    const ok = playSound("Scissors.wav");
+    const ok = playSound("TableLayerExit.wav");
     respond(ok ? { status: "ok" } : { status: "error", message: "sound failed" });
     return;
   }
