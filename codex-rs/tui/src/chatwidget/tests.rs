@@ -62,6 +62,7 @@ use crossterm::event::KeyModifiers;
 use insta::assert_snapshot;
 use pretty_assertions::assert_eq;
 use std::collections::HashSet;
+use std::fs;
 use std::path::PathBuf;
 use tempfile::NamedTempFile;
 use tempfile::tempdir;
@@ -149,6 +150,24 @@ fn resumed_initial_messages_render_history() {
         text_blob.contains("assistant reply"),
         "expected replayed agent message",
     );
+}
+
+#[test]
+fn remove_user_message_from_rollout_removes_target_line() {
+    let file = NamedTempFile::new().unwrap();
+    let lines = [
+        r#"{"type":"event_msg","payload":{"type":"user_message","message":"first"}}"#,
+        r#"{"type":"event_msg","payload":{"type":"user_message","message":"second"}}"#,
+        r#"{"type":"response_item","payload":{"role":"assistant","content":"ok"}}"#,
+    ];
+    fs::write(file.path(), lines.join("\n")).unwrap();
+
+    let removed = super::remove_user_message_from_rollout(file.path(), Some(1), "second").unwrap();
+    assert!(removed);
+
+    let remaining = fs::read_to_string(file.path()).unwrap();
+    assert!(remaining.contains("first"));
+    assert!(!remaining.contains("second"));
 }
 
 /// Entering review mode uses the hint provided by the review request.
@@ -411,6 +430,7 @@ fn make_chatwidget_manual() -> (
         stream_controller: None,
         running_commands: HashMap::new(),
         suppressed_exec_calls: HashSet::new(),
+        exec_line_start_pending: HashMap::new(),
         last_unified_wait: None,
         task_complete_pending: false,
         mcp_startup_status: None,
@@ -426,6 +446,8 @@ fn make_chatwidget_manual() -> (
         suppress_session_configured_redraw: false,
         pending_notification: None,
         is_review_mode: false,
+        audio_cues_armed: false,
+        audio_cues_ready: false,
         pre_review_token_info: None,
         needs_final_message_separator: false,
         last_rendered_width: std::cell::Cell::new(None),
@@ -1043,7 +1065,7 @@ fn streaming_final_answer_keeps_task_running_state() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual();
 
     chat.on_task_started();
-    chat.on_agent_message_delta("Final answer line\n".to_string());
+    chat.on_agent_message_delta("Final answer line\n".to_string(), false);
     chat.on_commit_tick();
 
     assert!(chat.bottom_pane.is_task_running());
