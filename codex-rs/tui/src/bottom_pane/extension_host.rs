@@ -17,6 +17,9 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tracing::warn;
@@ -30,6 +33,7 @@ pub(crate) struct ExtensionHost {
     last_seed_mtime: RefCell<Option<SystemTime>>,
     log_path: PathBuf,
     session_path: RefCell<Option<PathBuf>>,
+    line_added_token: Arc<AtomicU64>,
 }
 
 const HISTORY_PAGE_JUMP: usize = 10;
@@ -144,6 +148,7 @@ impl ExtensionHost {
             last_seed_mtime: RefCell::new(None),
             log_path,
             session_path: RefCell::new(None),
+            line_added_token: Arc::new(AtomicU64::new(0)),
         };
         host.log_event(format!(
             "Host initialized; discovered extensions: {:?}",
@@ -207,16 +212,36 @@ impl ExtensionHost {
         if self.scripts.is_empty() {
             return;
         }
-        let scripts = self.scripts.clone();
-        let log_path = self.log_path.clone();
-        let event_string = event.to_string();
-        std::thread::spawn(move || {
-            let payload = json!({ "event": event_string });
-            for script in scripts {
-                let request = ExtensionHost::build_request("notify", payload.clone(), &log_path);
-                let _ = ExtensionHost::run_script(&script, "notify", request, &log_path);
-            }
-        });
+        if event == "line_added" {
+            let token = self.line_added_token.fetch_add(1, Ordering::SeqCst) + 1;
+            let scripts = self.scripts.clone();
+            let log_path = self.log_path.clone();
+            let line_added_token = self.line_added_token.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(1000));
+                if line_added_token.load(Ordering::SeqCst) != token {
+                    return;
+                }
+                let payload = json!({ "event": "line_added" });
+                for script in scripts {
+                    let request =
+                        ExtensionHost::build_request("notify", payload.clone(), &log_path);
+                    let _ = ExtensionHost::run_script(&script, "notify", request, &log_path);
+                }
+            });
+        } else {
+            let scripts = self.scripts.clone();
+            let log_path = self.log_path.clone();
+            let event_string = event.to_string();
+            std::thread::spawn(move || {
+                let payload = json!({ "event": event_string });
+                for script in scripts {
+                    let request =
+                        ExtensionHost::build_request("notify", payload.clone(), &log_path);
+                    let _ = ExtensionHost::run_script(&script, "notify", request, &log_path);
+                }
+            });
+        }
     }
 
     pub(crate) fn history_push(&self, text: &str) {
