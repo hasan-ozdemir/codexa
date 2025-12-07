@@ -382,6 +382,17 @@ fn trim_transcript_cells_to_nth_user(
     }
 }
 
+pub(crate) fn remove_nth_user_message(
+    transcript_cells: &mut Vec<Arc<dyn crate::history_cell::HistoryCell>>,
+    nth: usize,
+) -> bool {
+    if let Some(idx) = nth_user_position(transcript_cells, nth) {
+        transcript_cells.remove(idx);
+        return true;
+    }
+    false
+}
+
 pub(crate) fn user_count(cells: &[Arc<dyn crate::history_cell::HistoryCell>]) -> usize {
     user_positions_iter(cells).count()
 }

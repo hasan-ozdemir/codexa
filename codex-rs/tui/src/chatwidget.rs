@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
+use std::fs;
+use std::io;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -75,6 +78,8 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
+use serde_json::Map;
+use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 use tracing::debug;
@@ -121,7 +126,6 @@ use self::agent::spawn_agent_from_existing;
 mod session_header;
 use self::session_header::SessionHeader;
 use crate::streaming::controller::StreamController;
-use std::path::Path;
 
 use chrono::Local;
 use codex_common::approval_presets::ApprovalPreset;
@@ -371,11 +375,11 @@ fn create_initial_user_message(text: String, image_paths: Vec<PathBuf>) -> Optio
 
 impl ChatWidget {
     fn flush_answer_stream_with_separator(&mut self) {
-        if let Some(mut controller) = self.stream_controller.take() {
-            if let Some(cell) = controller.finalize() {
-                // Streaming audio cues are emitted during push; avoid double fire here.
-                self.add_boxed_history_with_audio(cell, false);
-            }
+        if let Some(mut controller) = self.stream_controller.take()
+            && let Some(cell) = controller.finalize()
+        {
+            // Streaming audio cues are emitted during push; avoid double fire here.
+            self.add_boxed_history_with_audio(cell, false);
         }
     }
 
@@ -758,7 +762,8 @@ impl ChatWidget {
         self.finalize_turn();
 
         if self.audio_cues_ready {
-            self.bottom_pane.notify_extensions("conversation_interrupted");
+            self.bottom_pane
+                .notify_extensions("conversation_interrupted");
         }
 
         if reason != TurnAbortReason::ReviewEnded {
@@ -3199,6 +3204,14 @@ impl ChatWidget {
         self.conversation_id
     }
 
+    pub(crate) fn delete_history_entry(&self, index: Option<usize>, text: &str) {
+        if let Some(path) = self.rollout_path()
+            && let Err(err) = remove_user_message_from_rollout(&path, index, text)
+        {
+            tracing::warn!(?path, ?err, "failed to delete history entry from rollout");
+        }
+    }
+
     pub(crate) fn rollout_path(&self) -> Option<PathBuf> {
         self.current_rollout_path.clone()
     }
@@ -3226,6 +3239,179 @@ impl ChatWidget {
         );
         RenderableItem::Owned(Box::new(flex))
     }
+}
+
+fn remove_user_message_from_rollout(
+    rollout_path: &Path,
+    index: Option<usize>,
+    text: &str,
+) -> io::Result<bool> {
+    let contents = fs::read_to_string(rollout_path)?;
+    let trailing_newline = contents.ends_with('\n');
+    let lines: Vec<&str> = contents.lines().collect();
+    let (event_msgs, response_msgs) = collect_user_messages(&lines);
+    let use_events = !event_msgs.is_empty();
+    let entries = if use_events {
+        &event_msgs
+    } else {
+        &response_msgs
+    };
+
+    if entries.is_empty() {
+        return Ok(false);
+    }
+
+    let mut target_idx = index.filter(|i| *i < entries.len());
+    if target_idx.is_none() {
+        let target_key = normalize_key(text);
+        if !target_key.is_empty() {
+            target_idx = entries
+                .iter()
+                .position(|(_, msg)| normalize_key(msg) == target_key);
+        }
+    }
+
+    let Some(target_idx) = target_idx else {
+        return Ok(false);
+    };
+
+    let target_line_idx = entries[target_idx].0;
+    let mut filtered: Vec<&str> = Vec::with_capacity(lines.len().saturating_sub(1));
+    for (i, line) in lines.iter().enumerate() {
+        if i == target_line_idx {
+            continue;
+        }
+        filtered.push(*line);
+    }
+
+    let mut output = filtered.join("\n");
+    if trailing_newline && !output.ends_with('\n') {
+        output.push('\n');
+    }
+    fs::write(rollout_path, output)?;
+    Ok(true)
+}
+
+type IndexedMessages = Vec<(usize, String)>;
+
+fn collect_user_messages(lines: &[&str]) -> (IndexedMessages, IndexedMessages) {
+    let mut events: IndexedMessages = Vec::new();
+    let mut responses: IndexedMessages = Vec::new();
+
+    for (idx, line) in lines.iter().enumerate() {
+        if let Some((kind, text)) = parse_user_line(line) {
+            match kind {
+                UserLineKind::Event => events.push((idx, text)),
+                UserLineKind::Response => responses.push((idx, text)),
+            }
+        }
+    }
+
+    (events, responses)
+}
+
+#[derive(Clone, Copy)]
+enum UserLineKind {
+    Event,
+    Response,
+}
+
+fn parse_user_line(line: &str) -> Option<(UserLineKind, String)> {
+    let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(line) else {
+        return None;
+    };
+
+    let payload = obj
+        .get("payload")
+        .and_then(Value::as_object)
+        .unwrap_or(&obj);
+
+    if obj
+        .get("type")
+        .and_then(Value::as_str)
+        .is_some_and(|t| t == "event_msg")
+        && payload
+            .get("type")
+            .and_then(Value::as_str)
+            .is_some_and(|t| t == "user_message")
+        && let Some(text) = extract_event_user_text(payload)
+    {
+        return Some((UserLineKind::Event, text));
+    }
+
+    if obj
+        .get("type")
+        .and_then(Value::as_str)
+        .is_some_and(|t| t == "response_item")
+        && payload
+            .get("role")
+            .and_then(Value::as_str)
+            .is_some_and(|r| r == "user")
+        && let Some(text) = extract_response_user_text(payload)
+    {
+        return Some((UserLineKind::Response, text));
+    }
+
+    None
+}
+
+fn extract_event_user_text(payload: &Map<String, Value>) -> Option<String> {
+    if let Some(Value::String(message)) = payload.get("message") {
+        return Some(message.clone());
+    }
+    if let Some(content) = payload.get("content")
+        && let Some(text) = content_to_string(content)
+    {
+        return Some(text);
+    }
+    if let Some(input) = payload.get("input")
+        && let Some(text) = content_to_string(input)
+    {
+        return Some(text);
+    }
+    None
+}
+
+fn extract_response_user_text(payload: &Map<String, Value>) -> Option<String> {
+    payload
+        .get("content")
+        .and_then(content_to_string)
+        .or_else(|| payload.get("message").and_then(content_to_string))
+}
+
+fn content_to_string(value: &Value) -> Option<String> {
+    match value {
+        Value::String(s) => Some(s.clone()),
+        Value::Array(items) => {
+            let mut parts: Vec<String> = Vec::new();
+            for item in items {
+                match item {
+                    Value::String(s) => parts.push(s.clone()),
+                    Value::Object(obj) => {
+                        if let Some(text) = obj.get("text").and_then(Value::as_str) {
+                            parts.push(text.to_string());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if parts.is_empty() {
+                None
+            } else {
+                Some(parts.join(""))
+            }
+        }
+        Value::Object(obj) => obj.get("text").and_then(Value::as_str).map(str::to_string),
+        _ => None,
+    }
+}
+
+fn normalize_key(text: &str) -> String {
+    text.replace("\r\n", "\n")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase()
 }
 
 impl Drop for ChatWidget {

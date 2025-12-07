@@ -52,6 +52,11 @@ pub(crate) enum AppEvent {
     DiffResult(String),
 
     InsertHistoryCell(Box<dyn HistoryCell>),
+    DeleteHistoryEntry {
+        text: String,
+        /// Optional index of the user message in the session history (0 = oldest).
+        index: Option<usize>,
+    },
 
     StartCommitAnimation,
     StopCommitAnimation,

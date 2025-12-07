@@ -1,4 +1,5 @@
 use crate::app_backtrack::BacktrackState;
+use crate::app_backtrack::remove_nth_user_message;
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::ApprovalRequest;
@@ -42,6 +43,7 @@ use codex_protocol::openai_models::ModelUpgrade;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
+use color_eyre::eyre::eyre;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
@@ -49,12 +51,18 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
+use std::fs::File;
+use std::io::Write;
+use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -620,6 +628,10 @@ impl App {
                     }
                 }
             }
+            AppEvent::DeleteHistoryEntry { text, index } => {
+                self.chat_widget.delete_history_entry(index, &text);
+                self.remove_transcript_history_entry(index, &text, tui);
+            }
             AppEvent::StartCommitAnimation => {
                 if self
                     .commit_anim_running
@@ -1016,6 +1028,60 @@ impl App {
         self.chat_widget.token_usage()
     }
 
+    fn remove_transcript_history_entry(
+        &mut self,
+        index: Option<usize>,
+        text: &str,
+        tui: &mut tui::Tui,
+    ) {
+        fn normalize_key(text: &str) -> String {
+            let cleaned = text.replace("\r\n", "\n");
+            cleaned
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .to_ascii_lowercase()
+        }
+
+        let mut removed_any = false;
+        if let Some(nth) = index {
+            while remove_nth_user_message(&mut self.transcript_cells, nth) {
+                removed_any = true;
+            }
+        }
+
+        let target = normalize_key(text);
+        if !target.is_empty() {
+            self.transcript_cells.retain(|cell| {
+                let keep = cell
+                    .as_any()
+                    .downcast_ref::<crate::history_cell::UserHistoryCell>()
+                    .is_none_or(|c| normalize_key(&c.message) != target);
+                if !keep {
+                    removed_any = true;
+                }
+                keep
+            });
+        }
+
+        if !removed_any {
+            return;
+        }
+
+        if matches!(self.overlay, Some(Overlay::Transcript(_))) {
+            self.overlay = Some(Overlay::new_transcript(self.transcript_cells.clone()));
+        }
+
+        let remaining_users = crate::app_backtrack::user_count(&self.transcript_cells);
+        if remaining_users == 0 {
+            self.backtrack.nth_user_message = usize::MAX;
+        } else if self.backtrack.nth_user_message >= remaining_users {
+            self.backtrack.nth_user_message = remaining_users.saturating_sub(1);
+        }
+
+        tui.frame_requester().schedule_frame();
+    }
+
     fn on_update_reasoning_effort(&mut self, effort: Option<ReasoningEffortConfig>) {
         self.chat_widget.set_reasoning_effort(effort);
         self.config.model_reasoning_effort = effort;
@@ -1033,6 +1099,24 @@ impl App {
                 let _ = tui.enter_alt_screen();
                 self.overlay = Some(Overlay::new_transcript(self.transcript_cells.clone()));
                 tui.frame_requester().schedule_frame();
+            }
+            KeyEvent {
+                code: KeyCode::Char('o'),
+                modifiers: crossterm::event::KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press,
+                ..
+            } => {
+                let transcript = self.transcript_cells.clone();
+                let width = tui.terminal.last_known_screen_size.width.max(80);
+                match tokio::task::spawn_blocking(move || {
+                    export_transcript_to_temp_file(transcript, width)
+                })
+                .await
+                {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(err)) => tracing::warn!("Failed to export transcript: {err}"),
+                    Err(err) => tracing::warn!("Failed to export transcript: {err}"),
+                }
             }
             // Esc primes/advances backtracking only in normal (not working) mode
             // with the composer focused and empty. In any other state, forward
@@ -1108,6 +1192,101 @@ impl App {
             }
         });
     }
+}
+
+fn export_transcript_to_temp_file(
+    transcript: Vec<Arc<dyn HistoryCell>>,
+    width: u16,
+) -> Result<PathBuf> {
+    let lines = transcript_plain_lines(&transcript, width);
+    if lines.is_empty() {
+        return Err(eyre!("No transcript available to export yet"));
+    }
+
+    let path = write_transcript_file(&lines)?;
+    open_file_with_default_app(&path)?;
+    Ok(path)
+}
+
+fn transcript_plain_lines(cells: &[Arc<dyn HistoryCell>], width: u16) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut has_emitted = false;
+
+    for cell in cells {
+        let rendered = cell.transcript_lines(width);
+        if rendered.is_empty() {
+            continue;
+        }
+
+        if !cell.is_stream_continuation() && has_emitted {
+            out.push(String::new());
+        }
+        has_emitted = true;
+
+        for line in rendered {
+            let mut content = String::new();
+            for span in line.spans {
+                content.push_str(span.content.as_ref());
+            }
+            out.push(content);
+        }
+    }
+
+    out
+}
+
+fn write_transcript_file(lines: &[String]) -> Result<PathBuf> {
+    let mut path = std::env::temp_dir();
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_millis();
+    path.push(format!("codex-transcript-{timestamp}.txt"));
+
+    let mut file = File::create(&path).wrap_err("failed to create transcript file")?;
+    for line in lines {
+        writeln!(file, "{line}")?;
+    }
+    file.flush().wrap_err("failed to flush transcript file")?;
+
+    Ok(path)
+}
+
+#[cfg(target_os = "windows")]
+fn open_file_with_default_app(path: &Path) -> Result<()> {
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| eyre!("failed to render transcript path"))?;
+    Command::new("cmd")
+        .args(["/C", "start", "", path_str])
+        .spawn()
+        .wrap_err("failed to launch default application for transcript")?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn open_file_with_default_app(path: &Path) -> Result<()> {
+    Command::new("open")
+        .arg(path)
+        .spawn()
+        .wrap_err("failed to launch default application for transcript")?;
+    Ok(())
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn open_file_with_default_app(path: &Path) -> Result<()> {
+    Command::new("xdg-open")
+        .arg(path)
+        .spawn()
+        .wrap_err("failed to launch default application for transcript")?;
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "windows", unix)))]
+fn open_file_with_default_app(_path: &Path) -> Result<()> {
+    Err(eyre!(
+        "opening transcript files is not supported on this platform"
+    ))
 }
 
 fn migration_prompt_allowed_auth_modes(migration_config_key: &str) -> Option<&'static [AuthMode]> {

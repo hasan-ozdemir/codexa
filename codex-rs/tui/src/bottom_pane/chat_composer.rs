@@ -165,9 +165,17 @@ impl ChatComposer {
         let extension_host = ExtensionHost::new();
         let cfg = extension_host.config().clone();
         let env_bool = |key: &str, default: bool| {
-            env::var(key)
-                .map(|v| !matches!(v.to_ascii_lowercase().as_str(), "0" | "false" | "no"))
-                .unwrap_or(default)
+            #[cfg(test)]
+            {
+                let _ = key;
+                return default;
+            }
+            #[cfg(not(test))]
+            {
+                env::var(key)
+                    .map(|v| !matches!(v.to_ascii_lowercase().as_str(), "0" | "false" | "no"))
+                    .unwrap_or(default)
+            }
         };
 
         let mut this = Self {
@@ -225,9 +233,12 @@ impl ChatComposer {
         this
     }
 
-    pub(crate) fn set_skill_mentions(&mut self, skills: Option<Vec<codex_core::skills::model::SkillMetadata>>) {
+    pub(crate) fn set_skill_mentions(
+        &mut self,
+        skills: Option<Vec<codex_core::skills::model::SkillMetadata>>,
+    ) {
         // Skills are considered enabled if any metadata is provided.
-        self.skills_enabled = skills.as_ref().map_or(false, |s| !s.is_empty());
+        self.skills_enabled = skills.as_ref().is_some_and(|s| !s.is_empty());
     }
 
     fn layout_areas(&self, area: Rect) -> [Rect; 3] {
@@ -1104,6 +1115,13 @@ impl ChatComposer {
                 }
                 self.handle_input_basic(input)
             }
+            input if self.matches_history_delete(&input) => {
+                if let Some(text) = self.delete_current_history_entry() {
+                    self.set_text_content(text);
+                    return (InputResult::None, true);
+                }
+                self.handle_input_basic(input)
+            }
             input if self.matches_history_next(&input) => {
                 self.extension_host.log_event("Key matched history_next");
                 if let Some(text) = self.extension_history_navigation(KeyCode::Down) {
@@ -1300,6 +1318,42 @@ impl ChatComposer {
         Some(text)
     }
 
+    fn delete_current_history_entry(&mut self) -> Option<String> {
+        if !self.history.is_browsing() && !self.extension_host.has_history_state() {
+            return None;
+        }
+
+        let current_text = self.textarea.text().to_string();
+        let mut next_text = None;
+        let mut deleted_index = None;
+
+        if let Some(res) = self
+            .history
+            .delete_current_entry(&self.app_event_tx, &current_text)
+        {
+            next_text = res.next_text;
+            deleted_index = Some(res.global_index);
+        }
+
+        if let Some(ext_next) = self
+            .extension_host
+            .history_delete(&current_text, deleted_index)
+        {
+            next_text = next_text.or(Some(ext_next));
+        }
+
+        self.app_event_tx.send(AppEvent::DeleteHistoryEntry {
+            text: current_text,
+            index: deleted_index,
+        });
+
+        if next_text.as_deref() == Some("") && self.history.is_browsing() {
+            next_text = self.history.navigate_down(&self.app_event_tx);
+        }
+
+        next_text.or_else(|| Some(String::new()))
+    }
+
     fn load_extension_keys(&self) -> ExtensionKeyConfig {
         let cfg = self.extension_host.config();
         ExtensionKeyConfig {
@@ -1339,6 +1393,12 @@ impl ChatComposer {
             .history_last
             .iter()
             .any(|kb| kb.matches(key))
+    }
+
+    fn matches_history_delete(&self, key: &KeyEvent) -> bool {
+        key.code == KeyCode::Delete
+            && key.modifiers == (KeyModifiers::ALT | KeyModifiers::SHIFT)
+            && key.kind == KeyEventKind::Press
     }
 
     fn matches_history_prev(&self, key: &KeyEvent) -> bool {
@@ -1819,11 +1879,11 @@ impl ChatComposer {
     fn next_word_start_space_only(&self) -> usize {
         let text = self.textarea.text();
         let cursor = self.textarea.cursor();
-        let mut iter = text[cursor..].char_indices();
+        let iter = text[cursor..].char_indices();
 
         // 1) skip over the rest of the current word (non-space)
         let mut offset = cursor;
-        while let Some((i, ch)) = iter.next() {
+        for (i, ch) in iter {
             offset = cursor + i;
             if ch.is_whitespace() {
                 break;
@@ -1863,7 +1923,7 @@ impl ChatComposer {
             start = idx;
             if chars
                 .last()
-                .map_or(true, |&(_, prev_ch)| prev_ch.is_whitespace())
+                .is_none_or(|&(_, prev_ch)| prev_ch.is_whitespace())
             {
                 break;
             }
@@ -1876,11 +1936,11 @@ impl ChatComposer {
         if pos >= text.len() {
             return text.len();
         }
-        let mut iter = text[pos..].char_indices();
+        let iter = text[pos..].char_indices();
 
         // 1) skip remainder of current word
         let mut offset = pos;
-        while let Some((i, ch)) = iter.next() {
+        for (i, ch) in iter {
             offset = pos + i;
             if ch.is_whitespace() {
                 break;
@@ -2164,27 +2224,30 @@ impl Renderable for ChatComposer {
             let top_y = textarea_rect.y.saturating_sub(1);
             if top_y >= composer_rect.y && top_y < composer_rect.y + composer_rect.height {
                 for x in start_x..end_x {
-                    if let Some(cell) = buf.cell_mut((x, top_y)) {
-                        if cell.symbol() != line_symbol || cell.style() != border_style {
-                            cell.set_symbol(line_symbol);
-                            cell.set_style(border_style);
-                        }
+                    if let Some(cell) = buf.cell_mut((x, top_y))
+                        && (cell.symbol() != line_symbol || cell.style() != border_style)
+                    {
+                        cell.set_symbol(line_symbol);
+                        cell.set_style(border_style);
                     }
                 }
             }
             let bottom_y = textarea_rect.y + textarea_rect.height;
             if bottom_y < composer_rect.y + composer_rect.height {
                 for x in start_x..end_x {
-                    if let Some(cell) = buf.cell_mut((x, bottom_y)) {
-                        if cell.symbol() != line_symbol || cell.style() != border_style {
-                            cell.set_symbol(line_symbol);
-                            cell.set_style(border_style);
-                        }
+                    if let Some(cell) = buf.cell_mut((x, bottom_y))
+                        && (cell.symbol() != line_symbol || cell.style() != border_style)
+                    {
+                        cell.set_symbol(line_symbol);
+                        cell.set_style(border_style);
                     }
                 }
             }
         }
-        if !textarea_rect.is_empty() && !self.hide_edit_marker {
+        if !textarea_rect.is_empty()
+            && !self.hide_edit_marker
+            && textarea_rect.x >= LIVE_PREFIX_COLS
+        {
             buf.set_span(
                 textarea_rect.x - LIVE_PREFIX_COLS,
                 textarea_rect.y,

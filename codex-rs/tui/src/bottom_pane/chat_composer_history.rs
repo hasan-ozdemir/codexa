@@ -4,6 +4,16 @@ use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 use codex_core::protocol::Op;
 
+#[allow(dead_code)]
+pub(crate) struct DeleteResult {
+    pub deleted_text: String,
+    pub next_text: Option<String>,
+    /// Zero-based position within the combined persistent+local history.
+    pub global_index: usize,
+    /// Index within the persistent history file, if the deleted entry was persistent.
+    pub persistent_index: Option<usize>,
+}
+
 /// State machine that manages shell-style history navigation (Up/Down) inside
 /// the chat composer. This struct is intentionally decoupled from the
 /// rendering widget so the logic remains isolated and easier to test.
@@ -74,6 +84,10 @@ impl ChatComposerHistory {
     pub fn reset_navigation(&mut self) {
         self.history_cursor = None;
         self.last_history_text = None;
+    }
+
+    pub fn is_browsing(&self) -> bool {
+        self.history_cursor.is_some()
     }
 
     /// Should Up/Down key presses be interpreted as history navigation given
@@ -162,6 +176,55 @@ impl ChatComposerHistory {
         None
     }
 
+    /// Delete the currently selected history entry (if browsing). Returns the
+    /// deleted text and the next entry that should be shown (if any).
+    pub fn delete_current_entry(
+        &mut self,
+        app_event_tx: &AppEventSender,
+        current_text: &str,
+    ) -> Option<DeleteResult> {
+        let cursor = self.history_cursor?;
+        let total_entries = self.history_entry_count + self.local_history.len();
+        if total_entries == 0 {
+            return None;
+        }
+
+        let cursor_usize = cursor.try_into().ok()?;
+        let deleted_text = self
+            .current_entry_text(cursor_usize, current_text)
+            .unwrap_or_else(|| current_text.to_string());
+
+        let mut persistent_index = None;
+        if cursor_usize < self.history_entry_count {
+            persistent_index = Some(cursor_usize);
+            self.delete_persistent_entry(cursor_usize);
+        } else {
+            let local_idx = cursor_usize.saturating_sub(self.history_entry_count);
+            if local_idx < self.local_history.len() {
+                self.local_history.remove(local_idx);
+            } else {
+                return None;
+            }
+        }
+
+        let total_after = self.history_entry_count + self.local_history.len();
+        let next_text = if total_after == 0 || cursor_usize >= total_after {
+            self.history_cursor = None;
+            self.last_history_text = None;
+            Some(String::new())
+        } else {
+            self.history_cursor = Some(cursor);
+            self.populate_history_at_index(cursor_usize, app_event_tx)
+        };
+
+        Some(DeleteResult {
+            deleted_text,
+            next_text,
+            global_index: cursor_usize,
+            persistent_index,
+        })
+    }
+
     // ---------------------------------------------------------------------
     // Internal helpers
     // ---------------------------------------------------------------------
@@ -189,6 +252,44 @@ impl ChatComposerHistory {
                 log_id,
             };
             app_event_tx.send(AppEvent::CodexOp(op));
+        }
+        None
+    }
+
+    fn delete_persistent_entry(&mut self, idx: usize) {
+        self.fetched_history.remove(&idx);
+        let mut shifted: HashMap<usize, String> = HashMap::new();
+        for (k, v) in self.fetched_history.drain() {
+            if k < idx {
+                shifted.insert(k, v);
+            } else if k > idx {
+                shifted.insert(k - 1, v);
+            }
+        }
+        self.fetched_history = shifted;
+        if self.history_entry_count > 0 {
+            self.history_entry_count -= 1;
+        }
+        if let Some(cursor) = self.history_cursor
+            && cursor as usize > idx
+        {
+            self.history_cursor = Some(cursor - 1);
+        }
+    }
+
+    fn current_entry_text(&self, idx: usize, fallback: &str) -> Option<String> {
+        if idx < self.history_entry_count {
+            if let Some(text) = self.fetched_history.get(&idx) {
+                return Some(text.clone());
+            }
+        } else {
+            let local_idx = idx.saturating_sub(self.history_entry_count);
+            if let Some(text) = self.local_history.get(local_idx) {
+                return Some(text.clone());
+            }
+        }
+        if !fallback.is_empty() {
+            return Some(fallback.to_string());
         }
         None
     }

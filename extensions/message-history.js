@@ -499,6 +499,132 @@ function handleLast(req) {
   return { status: "ok", text };
 }
 
+function handleDelete(req) {
+  const sessionId = activeSessionId(req);
+  const { entries: entriesFile, state: stateFile } = filesForSession(sessionId);
+
+  let entries = readEntries(entriesFile);
+  if (!entries.length) {
+    const lastPath = readLastSessionPath();
+    if (lastPath) {
+      entries = readRolloutUserMessages(lastPath);
+      overwriteEntries(entriesFile, entries);
+      writeCursor(stateFile, entries.length);
+    }
+  }
+
+  if (!entries.length) {
+    log(`history_delete no entries for session=${sessionId}, skipping`);
+    return { status: "skip" };
+  }
+
+  const incomingIdx =
+    Number.isInteger(req?.payload?.index) && req.payload.index >= 0
+      ? req.payload.index
+      : Number.isInteger(req?.index) && req.index >= 0
+      ? req.index
+      : null;
+  const targetKey = normalize_key(normalizedText(req));
+  let deleteIdx =
+    Number.isInteger(incomingIdx) && incomingIdx < entries.length
+      ? incomingIdx
+      : -1;
+  if (deleteIdx < 0 && targetKey) {
+    deleteIdx = entries.findIndex(
+      (e) => normalize_key(e) === targetKey && normalize_key(e) !== null,
+    );
+  }
+
+  if (deleteIdx < 0 || deleteIdx >= entries.length) {
+    log(`history_delete could not locate target entry`);
+    return { status: "skip" };
+  }
+
+  const removedKey = normalize_key(entries[deleteIdx]) ?? targetKey;
+  entries.splice(deleteIdx, 1);
+  overwriteEntries(entriesFile, entries);
+
+  let cursor = clampCursor(readCursor(stateFile, entries.length), entries.length);
+  if (cursor > deleteIdx) {
+    cursor -= 1;
+  }
+  if (cursor > entries.length) {
+    cursor = entries.length;
+  }
+  writeCursor(stateFile, cursor);
+
+  const sessionPath =
+    req?.payload?.session_path ?? req?.session_path ?? readLastSessionPath();
+  if (sessionPath && removedKey) {
+    removeUserFromRollout(sessionPath, deleteIdx, removedKey);
+  }
+
+  const next_text = entries[deleteIdx] ?? "";
+  return { status: "ok", next_text };
+}
+
+function removeUserFromRollout(sessionPath, deleteIdx, targetKey) {
+  try {
+    const raw = fs.readFileSync(sessionPath, "utf8");
+    const trailingNewline = raw.endsWith("\n");
+    const lines = raw.split(/\r?\n/);
+    const { events, responses } = collectRolloutUserLines(lines);
+    const useEvents = events.length > 0;
+    const list = useEvents ? events : responses;
+    if (!list.length) return;
+
+    let idx =
+      Number.isInteger(deleteIdx) && deleteIdx >= 0 && deleteIdx < list.length
+        ? deleteIdx
+        : -1;
+    if (idx < 0 && targetKey) {
+      idx = list.findIndex(
+        (entry) => normalize_key(entry.text) === targetKey && targetKey !== null,
+      );
+    }
+    if (idx < 0 || idx >= list.length) return;
+
+    const targetLine = list[idx].line;
+    const filtered = lines.filter((_, i) => i !== targetLine);
+    let output = filtered.join("\n");
+    if (trailingNewline && !output.endsWith("\n")) {
+      output += "\n";
+    }
+    fs.writeFileSync(sessionPath, output, "utf8");
+  } catch (err) {
+    log(`history_delete failed to update rollout: ${err}`);
+  }
+}
+
+function collectRolloutUserLines(lines) {
+  const events = [];
+  const responses = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    let obj;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const payload = obj?.payload && typeof obj.payload === "object" ? obj.payload : obj;
+    if (obj?.type === "event_msg" && payload?.type === "user_message") {
+      const text = extractEventUserText(payload);
+      const cleaned = cleanText(text);
+      if (cleaned) events.push({ line: i, text: cleaned });
+      continue;
+    }
+    const role = payload?.role;
+    if (obj?.type === "response_item" && role === "user") {
+      const text = extractResponseUserText(payload);
+      const cleaned = cleanText(text);
+      if (cleaned) responses.push({ line: i, text: cleaned });
+    }
+  }
+  return { events, responses };
+}
+
 function dispatch(req) {
   switch (req.action) {
     case "history_seed":
@@ -513,6 +639,8 @@ function dispatch(req) {
       return handleFirst(req);
     case "history_last":
       return handleLast(req);
+    case "history_delete":
+      return handleDelete(req);
     default:
       return { status: "skip" };
   }

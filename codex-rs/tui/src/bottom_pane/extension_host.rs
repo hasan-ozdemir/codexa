@@ -252,6 +252,32 @@ impl ExtensionHost {
         result
     }
 
+    pub(crate) fn history_delete(&self, text: &str, index: Option<usize>) -> Option<String> {
+        self.ensure_session_path();
+        let session_path_json = self
+            .session_path
+            .borrow()
+            .as_ref()
+            .map(|p| json!(p))
+            .unwrap_or(Value::Null);
+        let payload = json!({
+            "text": text,
+            "index": index,
+            "session_path": session_path_json
+        });
+        let reply = self.invoke_first("history_delete", payload).ok()??;
+        match reply {
+            ExtensionReply::Ok {
+                text: Some(next), ..
+            } => Some(next),
+            ExtensionReply::Ok { payload, .. } => payload
+                .as_ref()
+                .and_then(Self::extract_next_text_field)
+                .or_else(|| payload.and_then(Self::extract_text_field)),
+            ExtensionReply::Skip => None,
+        }
+    }
+
     fn ensure_session_path(&self) {
         if self.session_path.borrow().is_some() {
             return;
@@ -266,6 +292,10 @@ impl ExtensionHost {
         dirs::home_dir()
             .map(|h| h.join(".codex").join("sessions"))
             .unwrap_or_else(|| PathBuf::from("."))
+    }
+
+    pub(crate) fn has_history_state(&self) -> bool {
+        Self::history_root().exists()
     }
 
     #[cfg_attr(test, allow(dead_code))]
@@ -362,7 +392,22 @@ impl ExtensionHost {
         log_path: &Path,
     ) -> Result<ExtensionReply, ExtensionHostError> {
         let request = Self::build_request(action, payload, log_path);
-        let mut child = Command::new("node")
+        let mut cmd = Command::new("node");
+        #[cfg(test)]
+        {
+            for key in [
+                "a11y_hide_edit_marker",
+                "a11y_hide_prompt_hints",
+                "a11y_hide_statusbar_hints",
+                "a11y_editor_align_left",
+                "a11y_editor_borderline",
+                "a11y_keyboard_shortcuts",
+                "a11y_audio_cues",
+            ] {
+                cmd.env_remove(key);
+            }
+        }
+        let mut child = cmd
             .arg(script)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -456,6 +501,13 @@ impl ExtensionHost {
             return map.get("text").and_then(|v| v.as_str()).map(String::from);
         }
         None
+    }
+
+    fn extract_next_text_field(payload: &Value) -> Option<String> {
+        payload
+            .as_object()
+            .and_then(|obj| obj.get("next_text").and_then(Value::as_str))
+            .map(str::to_string)
     }
 
     fn discover_scripts() -> Vec<PathBuf> {

@@ -179,7 +179,7 @@ mod tests {
         // Simulate streaming with a commit tick attempt after each delta.
         for d in deltas.iter() {
             ctrl.push(d);
-            while let (Some(cell), idle) = ctrl.on_commit_tick() {
+            while let (Some(cell), _, idle) = ctrl.on_commit_tick() {
                 lines.extend(cell.transcript_lines(u16::MAX));
                 if idle {
                     break;
