@@ -54,31 +54,12 @@ function playSound(file) {
   const path = require("path");
   const { spawn } = require("child_process");
   const fs = require("fs");
-  const pkgRoot = (() => {
-    try {
-      const pkg = require.resolve("@openai/codex/package.json");
-      return path.dirname(pkg);
-    } catch {
-      return null;
-    }
-  })();
-  const jawsPath =
-    "C:\\\\ProgramData\\\\Freedom Scientific\\\\JAWS\\\\2025\\\\SETTINGS\\\\enu\\\\SOUNDS\\\\TypeDing2.wav";
-
-  const full = (() => {
-    if (path.isAbsolute(file) && fs.existsSync(file)) {
-      log(`playSound resolved absolute path ${file}`);
-      return file;
-    }
-    const bundled = path.join(__dirname, "sounds", file);
-    if (fs.existsSync(bundled)) return bundled;
-    if (pkgRoot) {
-      const pkgSound = path.join(pkgRoot, "extensions", "sounds", file);
-      if (fs.existsSync(pkgSound)) return pkgSound;
-    }
-    log(`playSound fell back to JAWS default for ${file}`);
-    return jawsPath;
-  })();
+  const bundled = path.join(__dirname, "sounds", file);
+  if (!fs.existsSync(bundled)) {
+    log(`playSound missing sound file ${file} (expected ${bundled})`);
+    return false;
+  }
+  const full = bundled;
 
   try {
     if (currentSound && !currentSound.killed) {
