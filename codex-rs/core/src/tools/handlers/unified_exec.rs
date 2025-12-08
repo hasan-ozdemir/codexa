@@ -4,6 +4,7 @@ use crate::protocol::EventMsg;
 use crate::protocol::ExecCommandOutputDeltaEvent;
 use crate::protocol::ExecCommandSource;
 use crate::protocol::ExecOutputStream;
+use crate::sandboxing::SandboxPermissions;
 use crate::shell::Shell;
 use crate::shell::get_shell_by_model_provided_path;
 use crate::tools::context::ToolInvocation;
@@ -41,7 +42,7 @@ struct ExecCommandArgs {
     #[serde(default)]
     max_output_tokens: Option<usize>,
     #[serde(default)]
-    with_escalated_permissions: Option<bool>,
+    sandbox_permissions: SandboxPermissions,
     #[serde(default)]
     justification: Option<String>,
 }
@@ -132,12 +133,12 @@ impl ToolHandler for UnifiedExecHandler {
                     login,
                     yield_time_ms,
                     max_output_tokens,
-                    with_escalated_permissions,
+                    sandbox_permissions,
                     justification,
                     ..
                 } = args;
 
-                if with_escalated_permissions.unwrap_or(false)
+                if sandbox_permissions.requires_escalated_permissions()
                     && !matches!(
                         context.turn.approval_policy,
                         codex_protocol::protocol::AskForApproval::OnRequest
@@ -202,7 +203,7 @@ impl ToolHandler for UnifiedExecHandler {
                             yield_time_ms,
                             max_output_tokens,
                             workdir,
-                            with_escalated_permissions,
+                            sandbox_permissions,
                             justification,
                         },
                         &context,
