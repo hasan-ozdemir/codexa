@@ -123,6 +123,7 @@ pub(crate) struct ChatComposer {
     context_window_used_tokens: Option<i64>,
     extension_host: ExtensionHost,
     extension_keys: ExtensionKeyConfig,
+    app_ready_sent: std::cell::Cell<bool>,
     draft_buffer: Option<DraftBuffer>,
     skills_enabled: bool,
     hide_edit_marker: bool,
@@ -145,10 +146,17 @@ struct ExtensionKeyConfig {
     history_last: Vec<KeyBinding>,
 }
 
+#[cfg_attr(test, allow(dead_code))]
 #[derive(Clone, Debug, Default)]
 struct DraftBuffer {
     text: String,
     cursor: usize,
+}
+
+#[derive(Clone, Debug)]
+struct HistoryNavResult {
+    text: String,
+    cursor: Option<usize>,
 }
 
 /// Popup state - at most one can be visible at any time.
@@ -211,6 +219,7 @@ impl ChatComposer {
             context_window_used_tokens: None,
             extension_host,
             extension_keys: ExtensionKeyConfig::default(),
+            app_ready_sent: std::cell::Cell::new(false),
             draft_buffer: None,
             skills_enabled: false,
             hide_edit_marker: cfg
@@ -563,6 +572,14 @@ impl ChatComposer {
             return;
         }
         self.extension_host.notify_event(event);
+    }
+
+    fn emit_app_ready_once(&self) {
+        if self.app_ready_sent.get() {
+            return;
+        }
+        self.extension_host.notify_event("app_ready");
+        self.app_ready_sent.set(true);
     }
 
     /// Handle key event when the slash-command popup is visible.
@@ -1068,8 +1085,11 @@ impl ChatComposer {
             // -------------------------------------------------------------
             input if self.matches_history_first(&input) => {
                 self.extension_host.log_event("Key matched history_first");
-                if let Some(text) = self.extension_history_navigation(KeyCode::Home) {
-                    self.set_text_content(text);
+                if let Some(res) = self.extension_history_navigation(KeyCode::Home) {
+                    self.set_text_content(res.text);
+                    if let Some(c) = res.cursor {
+                        self.textarea.set_cursor(c);
+                    }
                     self.extension_host
                         .log_event("Applied history_first text to textarea");
                     return (InputResult::None, true);
@@ -1078,8 +1098,11 @@ impl ChatComposer {
             }
             input if self.matches_history_last(&input) => {
                 self.extension_host.log_event("Key matched history_last");
-                if let Some(text) = self.extension_history_navigation(KeyCode::End) {
-                    self.set_text_content(text);
+                if let Some(res) = self.extension_history_navigation(KeyCode::End) {
+                    self.set_text_content(res.text);
+                    if let Some(c) = res.cursor {
+                        self.textarea.set_cursor(c);
+                    }
                     self.extension_host
                         .log_event("Applied history_last text to textarea");
                     return (InputResult::None, true);
@@ -1088,8 +1111,11 @@ impl ChatComposer {
             }
             input if self.matches_history_prev(&input) => {
                 self.extension_host.log_event("Key matched history_prev");
-                if let Some(text) = self.extension_history_navigation(KeyCode::Up) {
-                    self.set_text_content(text);
+                if let Some(res) = self.extension_history_navigation(KeyCode::Up) {
+                    self.set_text_content(res.text);
+                    if let Some(c) = res.cursor {
+                        self.textarea.set_cursor(c);
+                    }
                     self.extension_host
                         .log_event("Applied history_prev text to textarea");
                     return (InputResult::None, true);
@@ -1105,8 +1131,11 @@ impl ChatComposer {
                     self.set_text_content(text);
                     return (InputResult::None, true);
                 }
-                if let Some(text) = self.extension_history_navigation(KeyCode::Up) {
-                    self.set_text_content(text);
+                if let Some(res) = self.extension_history_navigation(KeyCode::Up) {
+                    self.set_text_content(res.text.clone());
+                    if let Some(c) = res.cursor {
+                        self.textarea.set_cursor(c);
+                    }
                     self.extension_host
                         .log_event("Applied history_prev text to textarea");
                     return (InputResult::None, true);
@@ -1116,8 +1145,11 @@ impl ChatComposer {
             input if self.matches_history_prev_page(&input) => {
                 self.extension_host
                     .log_event("Key matched history_prev_page");
-                if let Some(text) = self.extension_history_navigation(KeyCode::PageUp) {
-                    self.set_text_content(text);
+                if let Some(res) = self.extension_history_navigation(KeyCode::PageUp) {
+                    self.set_text_content(res.text);
+                    if let Some(c) = res.cursor {
+                        self.textarea.set_cursor(c);
+                    }
                     self.extension_host
                         .log_event("Applied history_prev_page text to textarea");
                     return (InputResult::None, true);
@@ -1133,8 +1165,11 @@ impl ChatComposer {
             }
             input if self.matches_history_next(&input) => {
                 self.extension_host.log_event("Key matched history_next");
-                if let Some(text) = self.extension_history_navigation(KeyCode::Down) {
-                    self.set_text_content(text);
+                if let Some(res) = self.extension_history_navigation(KeyCode::Down) {
+                    self.set_text_content(res.text.clone());
+                    if let Some(c) = res.cursor {
+                        self.textarea.set_cursor(c);
+                    }
                     self.extension_host
                         .log_event("Applied history_next text to textarea");
                     return (InputResult::None, true);
@@ -1152,8 +1187,11 @@ impl ChatComposer {
                         .log_event("Applied built-in history_next text to textarea");
                     return (InputResult::None, true);
                 }
-                if let Some(text) = self.extension_history_navigation(KeyCode::Down) {
-                    self.set_text_content(text);
+                if let Some(res) = self.extension_history_navigation(KeyCode::Down) {
+                    self.set_text_content(res.text.clone());
+                    if let Some(c) = res.cursor {
+                        self.textarea.set_cursor(c);
+                    }
                     self.extension_host
                         .log_event("Applied history_next text to textarea");
                     return (InputResult::None, true);
@@ -1163,8 +1201,11 @@ impl ChatComposer {
             input if self.matches_history_next_page(&input) => {
                 self.extension_host
                     .log_event("Key matched history_next_page");
-                if let Some(text) = self.extension_history_navigation(KeyCode::PageDown) {
-                    self.set_text_content(text);
+                if let Some(res) = self.extension_history_navigation(KeyCode::PageDown) {
+                    self.set_text_content(res.text);
+                    if let Some(c) = res.cursor {
+                        self.textarea.set_cursor(c);
+                    }
                     self.extension_host
                         .log_event("Applied history_next_page text to textarea");
                     return (InputResult::None, true);
@@ -1309,13 +1350,13 @@ impl ChatComposer {
     }
 
     #[cfg(test)]
-    fn extension_history_navigation(&mut self, code: KeyCode) -> Option<String> {
+    fn extension_history_navigation(&mut self, code: KeyCode) -> Option<HistoryNavResult> {
         let _ = code;
         None
     }
 
     #[cfg(not(test))]
-    fn extension_history_navigation(&mut self, code: KeyCode) -> Option<String> {
+    fn extension_history_navigation(&mut self, code: KeyCode) -> Option<HistoryNavResult> {
         if self.draft_buffer.is_none() {
             let text = self.current_text();
             let cursor = self.textarea.cursor();
@@ -1332,12 +1373,13 @@ impl ChatComposer {
         }?;
         if text.is_empty() && matches!(code, KeyCode::Down | KeyCode::PageDown) {
             if let Some(draft) = self.draft_buffer.take() {
-                self.set_text_content(draft.text);
-                self.textarea.set_cursor(draft.cursor);
-                return Some(self.textarea.text().to_string());
+                return Some(HistoryNavResult {
+                    text: draft.text,
+                    cursor: Some(draft.cursor),
+                });
             }
         }
-        Some(text)
+        Some(HistoryNavResult { text, cursor: None })
     }
 
     fn delete_current_history_entry(&mut self) -> Option<String> {
@@ -2235,6 +2277,7 @@ impl Renderable for ChatComposer {
                     }
                 } else {
                     render_footer(hint_rect, buf, footer_props);
+                    self.emit_app_ready_once();
                 }
             }
         }
