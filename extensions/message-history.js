@@ -138,6 +138,24 @@ function filesForSession(sessionId) {
   };
 }
 
+function rolloutFileForSession(sessionId) {
+  return path.join(historyDir, `${sessionId}.rollout.jsonl`);
+}
+
+function syncRolloutMirror(sessionPath, sessionId) {
+  if (!sessionPath || !sessionId) return;
+  const sessionPathStr = String(sessionPath).trim();
+  if (!sessionPathStr) return;
+  try {
+    const data = fs.readFileSync(sessionPathStr);
+    const target = rolloutFileForSession(sessionId);
+    ensureDir(path.dirname(target));
+    fs.writeFileSync(target, data);
+  } catch (err) {
+    log(`rollout sync failed: ${err}`);
+  }
+}
+
 function parseUserContent(value) {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) {
@@ -350,6 +368,7 @@ function handleSeed(req) {
   if (sessionPath) {
     log(`history_seed session_path=${sessionPath}`);
     writeLastSessionPath(sessionPath);
+    syncRolloutMirror(sessionPath, sessionId);
   }
 
   const fromSessionFile =
@@ -373,6 +392,9 @@ function handleSeed(req) {
 function handlePush(req) {
   const sessionId = activeSessionId(req);
   const { entries: entriesFile, state: stateFile } = filesForSession(sessionId);
+  const sessionPath =
+    req?.payload?.session_path ?? req?.session_path ?? readLastSessionPath();
+  syncRolloutMirror(sessionPath, sessionId);
   const text = normalizedText(req);
   log(`history_push text='${text}'`);
   if (!text) {
@@ -550,6 +572,9 @@ function handleDelete(req) {
     req?.payload?.session_path ?? req?.session_path ?? readLastSessionPath();
   if (sessionPath && removedKey) {
     removeUserFromRollout(sessionPath, deleteIdx, removedKey);
+  }
+  if (sessionPath) {
+    syncRolloutMirror(sessionPath, sessionId);
   }
 
   const next_text = entries[deleteIdx] ?? "";
