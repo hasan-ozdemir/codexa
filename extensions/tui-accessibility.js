@@ -9,6 +9,7 @@
  */
 
 let LOG_PATH = null;
+let appReadyPlayed = false;
 
 function log(msg) {
   if (!LOG_PATH) return;
@@ -131,6 +132,11 @@ function handleNotify(payload, req) {
     return;
   }
   if (event === "app_ready") {
+    if (appReadyPlayed) {
+      respond({ status: "skip" });
+      return;
+    }
+    appReadyPlayed = true;
     // Use bundled notify.wav so it also works inside the packaged npm install.
     const ok = playSound("notify.wav");
     respond(ok ? { status: "ok" } : { status: "error", message: "sound failed" });

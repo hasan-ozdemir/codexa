@@ -1758,7 +1758,7 @@ impl ChatWidget {
         if !self.audio_cues_ready || !self.line_audio_active {
             return;
         }
-        for _ in 0..count {
+        if count > 0 {
             self.bottom_pane.notify_extensions("line_added");
         }
     }

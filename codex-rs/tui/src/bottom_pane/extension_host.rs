@@ -21,7 +21,6 @@ use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -39,8 +38,6 @@ struct ExtensionBridge {
     next_id: u64,
 }
 
-const EXT_CALL_TIMEOUT_MS: u64 = 800;
-
 #[derive(Debug)]
 pub(crate) struct ExtensionHost {
     scripts: Vec<PathBuf>,
@@ -50,8 +47,6 @@ pub(crate) struct ExtensionHost {
     log_path: PathBuf,
     session_path: RefCell<Option<PathBuf>>,
     line_added_token: Arc<AtomicU64>,
-    ready_emitted: Arc<AtomicBool>,
-    ready_token: Arc<AtomicU64>,
 }
 
 const HISTORY_PAGE_JUMP: usize = 10;
@@ -289,20 +284,7 @@ impl Drop for ExtensionBridge {
     }
 }
 
-#[cfg_attr(test, allow(dead_code))]
 impl ExtensionHost {
-    fn log_static(log_path: &Path, message: &str) {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs_f64())
-            .unwrap_or(0.0);
-        if let Some(dir) = log_path.parent() {
-            let _ = fs::create_dir_all(dir);
-        }
-        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
-            let _ = writeln!(file, "{timestamp:.3} [tui] {message}");
-        }
-    }
     pub(crate) fn new() -> Self {
         // Scripts are now loaded exclusively by the extension-client; we still
         // enumerate for logging/diagnostics only.
@@ -318,8 +300,6 @@ impl ExtensionHost {
             log_path,
             session_path: RefCell::new(None),
             line_added_token: Arc::new(AtomicU64::new(0)),
-            ready_emitted: Arc::new(AtomicBool::new(false)),
-            ready_token: Arc::new(AtomicU64::new(0)),
         };
         host.log_event(format!(
             "Host initialized; discovered extensions: {:?}",
@@ -382,11 +362,6 @@ impl ExtensionHost {
     pub(crate) fn notify_event(&self, event: &str) {
         if matches!(event, "completion_end" | "conversation_interrupted") {
             self.cancel_line_added_timer();
-            self.schedule_ready_after_idle();
-        }
-        if matches!(event, "line_added" | "prompt_submitted") {
-            self.bump_ready_token();
-            self.schedule_ready_after_idle();
         }
         if self.bridge.is_none() {
             return;
@@ -421,58 +396,10 @@ impl ExtensionHost {
                 }
             });
         }
-        self.schedule_ready_after_idle();
     }
 
     fn cancel_line_added_timer(&self) {
         self.line_added_token.fetch_add(1, Ordering::SeqCst);
-    }
-
-    fn emit_ready_once(&self) {
-        self.schedule_ready_after_idle();
-    }
-
-    fn bump_ready_token(&self) {
-        self.ready_token.fetch_add(1, Ordering::SeqCst);
-    }
-
-    fn schedule_ready_after_idle(&self) {
-        if self.ready_emitted.load(Ordering::SeqCst) {
-            return;
-        }
-        let bridge = self.bridge.clone();
-        if bridge.is_none() {
-            return;
-        }
-        let ready_token = self.ready_token.clone();
-        let line_token = self.line_added_token.clone();
-        let log_path = self.log_path.clone();
-        let already_emitted = self.ready_emitted.clone();
-        // Increment token to cancel prior timers.
-        let token_snapshot = ready_token.fetch_add(1, Ordering::SeqCst) + 1;
-        std::thread::spawn(move || {
-            let line_snapshot = line_token.load(Ordering::SeqCst);
-            std::thread::sleep(Duration::from_millis(800));
-            if ready_token.load(Ordering::SeqCst) != token_snapshot {
-                return;
-            }
-            if line_token.load(Ordering::SeqCst) != line_snapshot {
-                return;
-            }
-            if already_emitted
-                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-                .is_err()
-            {
-                return;
-            }
-            if let Some(bridge) = bridge {
-                if let Ok(mut guard) = bridge.lock() {
-                    Self::log_static(&log_path, "Emitting app_ready notify");
-                    let _ =
-                        guard.send_request("notify", json!({ "event": "app_ready" }), &log_path);
-                }
-            }
-        });
     }
 
     pub(crate) fn history_push(&self, text: &str) {
@@ -900,6 +827,16 @@ impl ExtensionHost {
                     }
                 }
             }
+            Self::ensure_history_binding(
+                &mut cfg.history_prev_keys,
+                KeyCode::Up,
+                KeyModifiers::NONE,
+            );
+            Self::ensure_history_binding(
+                &mut cfg.history_next_keys,
+                KeyCode::Down,
+                KeyModifiers::NONE,
+            );
             return cfg;
         }
 
@@ -1258,7 +1195,6 @@ mod tests {
             session_path: RefCell::new(None),
             line_added_token: Arc::new(AtomicU64::new(token)),
             ready_emitted: Arc::new(AtomicBool::new(false)),
-            ready_token: Arc::new(AtomicU64::new(0)),
         }
     }
 
