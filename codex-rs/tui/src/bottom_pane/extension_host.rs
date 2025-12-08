@@ -23,6 +23,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
+use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
@@ -37,6 +38,8 @@ struct ExtensionBridge {
     writer: TcpStream,
     next_id: u64,
 }
+
+const EXT_CALL_TIMEOUT_MS: u64 = 800;
 
 #[derive(Debug)]
 pub(crate) struct ExtensionHost {
@@ -161,14 +164,14 @@ impl ExtensionBridge {
         let mut child = cmd.spawn().ok()?;
 
         let addr = format!("127.0.0.1:{port}");
-        for _ in 0..50 {
+        for _ in 0..20 {
             if let Some(status) = child.try_wait().ok().flatten() {
                 tracing::warn!("extension-client exited early with {status}");
                 return None;
             }
             if let Ok(stream) = TcpStream::connect(&addr) {
-                let _ = stream.set_read_timeout(Some(Duration::from_millis(2000)));
-                let _ = stream.set_write_timeout(Some(Duration::from_millis(2000)));
+                let _ = stream.set_read_timeout(Some(Duration::from_millis(400)));
+                let _ = stream.set_write_timeout(Some(Duration::from_millis(400)));
                 let reader_stream = stream.try_clone().ok()?;
                 let reader = BufReader::new(reader_stream);
                 let writer = stream;
@@ -220,9 +223,9 @@ impl ExtensionBridge {
             buf.clear();
             let read = self.reader.read_line(&mut buf).map_err(|error| {
                 if error.kind() == ErrorKind::WouldBlock || error.kind() == ErrorKind::TimedOut {
-                    return ExtensionHostError::ScriptError {
+                    return ExtensionHostError::MissingStatus {
                         script: PathBuf::from("extension-client"),
-                        message: "timeout waiting for extension response".to_string(),
+                        raw: "timeout".to_string(),
                     };
                 }
                 ExtensionHostError::Io {
@@ -556,49 +559,72 @@ impl ExtensionHost {
         action: &str,
         payload: Value,
     ) -> Result<Option<ExtensionReply>, ExtensionHostError> {
-        if let Some(bridge) = &self.bridge {
-            let mut guard = bridge.lock().expect("bridge mutex poisoned");
-            match guard.send_request(action, payload, &self.log_path) {
-                Ok(ExtensionReply::Skip) => return Ok(None),
-                Ok(reply) => return Ok(Some(reply)),
-                Err(err) => return Err(err),
-            }
-        }
-        if self.scripts.is_empty() {
-            self.log_event(format!("No extensions to handle action {action}; skipping"));
-            return Ok(None);
-        }
+        let (tx, rx) = channel();
+        let bridge = self.bridge.clone();
+        let scripts = self.scripts.clone();
+        let log_path = self.log_path.clone();
+        let payload_clone = payload.clone();
+        let action_string = action.to_string();
 
-        let mut last_error: Option<ExtensionHostError> = None;
-        for script in &self.scripts {
-            self.log_event(format!("Calling script {script:?} action {action}"));
-            match Self::run_script(script, action, payload.clone(), &self.log_path) {
-                Ok(ExtensionReply::Skip) => {
-                    self.log_event(format!("Script {script:?} returned skip"));
-                    continue;
-                }
-                Ok(ExtensionReply::Ok {
-                    text: None,
-                    payload: None,
-                }) => {
-                    self.log_event(format!("Script {script:?} returned empty ok; continuing"));
-                    continue;
-                }
-                Ok(reply) => {
-                    self.log_event(format!("Script {script:?} returned ok"));
-                    return Ok(Some(reply));
-                }
-                Err(err) => {
-                    self.log_event(format!("Script {script:?} failed: {err}"));
-                    last_error = Some(err);
-                    continue;
+        std::thread::spawn(move || {
+            // Try bridge first
+            if let Some(bridge) = bridge {
+                if let Ok(mut guard) = bridge.lock() {
+                    match guard.send_request(&action_string, payload_clone.clone(), &log_path) {
+                        Ok(ExtensionReply::Skip)
+                        | Ok(ExtensionReply::Ok {
+                            text: None,
+                            payload: None,
+                        }) => {
+                            // fall through
+                        }
+                        Ok(reply) => {
+                            let _ = tx.send(Ok(Some(reply)));
+                            return;
+                        }
+                        Err(err) => {
+                            let _ = tx.send(Err(err));
+                            // continue to scripts
+                        }
+                    }
                 }
             }
-        }
-        if let Some(err) = last_error {
-            Err(err)
-        } else {
-            Ok(None)
+
+            if scripts.is_empty() {
+                let _ = tx.send(Ok(None));
+                return;
+            }
+
+            let mut last_error: Option<ExtensionHostError> = None;
+            for script in &scripts {
+                match ExtensionHost::run_script(script, &action_string, payload.clone(), &log_path)
+                {
+                    Ok(ExtensionReply::Skip) => continue,
+                    Ok(ExtensionReply::Ok {
+                        text: None,
+                        payload: None,
+                    }) => continue,
+                    Ok(reply) => {
+                        let _ = tx.send(Ok(Some(reply)));
+                        return;
+                    }
+                    Err(err) => {
+                        last_error = Some(err);
+                        continue;
+                    }
+                }
+            }
+            if let Some(err) = last_error {
+                let _ = tx.send(Err(err));
+            } else {
+                let _ = tx.send(Ok(None));
+            }
+        });
+
+        match rx.recv_timeout(Duration::from_millis(EXT_CALL_TIMEOUT_MS)) {
+            Ok(res) => res,
+            Err(RecvTimeoutError::Timeout) => Ok(None),
+            Err(RecvTimeoutError::Disconnected) => Ok(None),
         }
     }
 
@@ -796,6 +822,20 @@ impl ExtensionHost {
         }
         if let Ok(cwd) = env::current_dir() {
             candidates.push(cwd.join("extensions"));
+        }
+        // NPM global default on Windows: %APPDATA%\npm\node_modules\@openai\codex\extensions
+        if cfg!(windows) {
+            if let Some(home) = dirs::home_dir() {
+                let npm_ext = home
+                    .join("AppData")
+                    .join("Roaming")
+                    .join("npm")
+                    .join("node_modules")
+                    .join("@openai")
+                    .join("codex")
+                    .join("extensions");
+                candidates.push(npm_ext);
+            }
         }
         for dir in candidates {
             let path = dir.join("extension-client.js");
