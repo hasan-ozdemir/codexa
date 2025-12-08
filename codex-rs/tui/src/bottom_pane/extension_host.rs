@@ -12,6 +12,7 @@ use std::fs::OpenOptions;
 use std::io;
 use std::io::BufRead;
 use std::io::BufReader;
+use std::io::ErrorKind;
 use std::io::Write;
 use std::net::TcpStream;
 use std::path::Path;
@@ -166,12 +167,11 @@ impl ExtensionBridge {
                 return None;
             }
             if let Ok(stream) = TcpStream::connect(&addr) {
+                let _ = stream.set_read_timeout(Some(Duration::from_millis(2000)));
+                let _ = stream.set_write_timeout(Some(Duration::from_millis(2000)));
                 let reader_stream = stream.try_clone().ok()?;
-                let mut reader = BufReader::new(reader_stream);
+                let reader = BufReader::new(reader_stream);
                 let writer = stream;
-                // Drain any banner line if present
-                let mut _tmp = String::new();
-                let _ = reader.read_line(&mut _tmp);
                 return Some(Self {
                     child,
                     reader,
@@ -218,13 +218,18 @@ impl ExtensionBridge {
         let mut buf = String::new();
         loop {
             buf.clear();
-            let read = self
-                .reader
-                .read_line(&mut buf)
-                .map_err(|error| ExtensionHostError::Io {
+            let read = self.reader.read_line(&mut buf).map_err(|error| {
+                if error.kind() == ErrorKind::WouldBlock || error.kind() == ErrorKind::TimedOut {
+                    return ExtensionHostError::ScriptError {
+                        script: PathBuf::from("extension-client"),
+                        message: "timeout waiting for extension response".to_string(),
+                    };
+                }
+                ExtensionHostError::Io {
                     script: PathBuf::from("extension-client"),
                     error,
-                })?;
+                }
+            })?;
             if read == 0 {
                 return Err(ExtensionHostError::ScriptError {
                     script: PathBuf::from("extension-client"),
