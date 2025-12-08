@@ -293,6 +293,8 @@ impl Drop for ExtensionBridge {
 #[cfg_attr(test, allow(dead_code))]
 impl ExtensionHost {
     pub(crate) fn new() -> Self {
+        // Scripts are now loaded exclusively by the extension-client; we still
+        // enumerate for logging/diagnostics only.
         let scripts = Self::discover_scripts();
         let log_path = Self::default_log_path();
         let bridge = ExtensionBridge::spawn(5555).map(|b| Arc::new(Mutex::new(b)));
@@ -370,12 +372,11 @@ impl ExtensionHost {
         if matches!(event, "completion_end" | "conversation_interrupted") {
             self.cancel_line_added_timer();
         }
-        if self.bridge.is_none() && self.scripts.is_empty() {
+        if self.bridge.is_none() {
             return;
         }
         if event == "line_added" {
             let token = self.line_added_token.fetch_add(1, Ordering::SeqCst) + 1;
-            let scripts = self.scripts.clone();
             let bridge = self.bridge.clone();
             let log_path = self.log_path.clone();
             let line_added_token = self.line_added_token.clone();
@@ -389,16 +390,9 @@ impl ExtensionHost {
                     if let Ok(mut guard) = bridge.lock() {
                         let _ = guard.send_request("notify", payload, &log_path);
                     }
-                } else {
-                    for script in scripts {
-                        let request =
-                            ExtensionHost::build_request("notify", payload.clone(), &log_path);
-                        let _ = ExtensionHost::run_script(&script, "notify", request, &log_path);
-                    }
                 }
             });
         } else {
-            let scripts = self.scripts.clone();
             let bridge = self.bridge.clone();
             let log_path = self.log_path.clone();
             let event_string = event.to_string();
@@ -407,12 +401,6 @@ impl ExtensionHost {
                 if let Some(bridge) = bridge {
                     if let Ok(mut guard) = bridge.lock() {
                         let _ = guard.send_request("notify", payload, &log_path);
-                    }
-                } else {
-                    for script in scripts {
-                        let request =
-                            ExtensionHost::build_request("notify", payload.clone(), &log_path);
-                        let _ = ExtensionHost::run_script(&script, "notify", request, &log_path);
                     }
                 }
             });
@@ -442,11 +430,10 @@ impl ExtensionHost {
         self.log_event(format!("history_push text='{text}'"));
         if let Some(bridge) = &self.bridge {
             if let Ok(mut guard) = bridge.lock() {
-                let _ = guard.send_request("history_push", payload.clone(), &self.log_path);
+                if let Err(err) = guard.send_request("history_push", payload, &self.log_path) {
+                    warn!(?err, "history_push bridge failed");
+                }
             }
-        }
-        if let Err(err) = self.invoke_first("history_push", payload) {
-            warn!(?err, "history_push extension failed");
         }
     }
 
@@ -481,12 +468,15 @@ impl ExtensionHost {
             "index": index,
             "session_path": session_path_json
         });
-        if let Some(bridge) = &self.bridge {
-            if let Ok(mut guard) = bridge.lock() {
-                let _ = guard.send_request("history_delete", payload.clone(), &self.log_path);
-            }
-        }
-        let reply = self.invoke_first("history_delete", payload).ok()??;
+        let reply = if let Some(bridge) = &self.bridge {
+            bridge.lock().ok().and_then(|mut g| {
+                g.send_request("history_delete", payload, &self.log_path)
+                    .ok()
+            })
+        } else {
+            None
+        };
+        let reply = reply?;
         match reply {
             ExtensionReply::Ok {
                 text: Some(next), ..
@@ -581,73 +571,17 @@ impl ExtensionHost {
         action: &str,
         payload: Value,
     ) -> Result<Option<ExtensionReply>, ExtensionHostError> {
-        let (tx, rx) = channel();
-        let bridge = self.bridge.clone();
-        let scripts = self.scripts.clone();
-        let log_path = self.log_path.clone();
-        let payload_clone = payload.clone();
-        let action_string = action.to_string();
-
-        std::thread::spawn(move || {
-            // Try bridge first
-            if let Some(bridge) = bridge {
-                if let Ok(mut guard) = bridge.lock() {
-                    match guard.send_request(&action_string, payload_clone.clone(), &log_path) {
-                        Ok(ExtensionReply::Skip)
-                        | Ok(ExtensionReply::Ok {
-                            text: None,
-                            payload: None,
-                        }) => {
-                            // fall through
-                        }
-                        Ok(reply) => {
-                            let _ = tx.send(Ok(Some(reply)));
-                            return;
-                        }
-                        Err(err) => {
-                            let _ = tx.send(Err(err));
-                            // continue to scripts
-                        }
-                    }
-                }
-            }
-
-            if scripts.is_empty() {
-                let _ = tx.send(Ok(None));
-                return;
-            }
-
-            let mut last_error: Option<ExtensionHostError> = None;
-            for script in &scripts {
-                match ExtensionHost::run_script(script, &action_string, payload.clone(), &log_path)
-                {
-                    Ok(ExtensionReply::Skip) => continue,
-                    Ok(ExtensionReply::Ok {
-                        text: None,
-                        payload: None,
-                    }) => continue,
-                    Ok(reply) => {
-                        let _ = tx.send(Ok(Some(reply)));
-                        return;
-                    }
-                    Err(err) => {
-                        last_error = Some(err);
-                        continue;
-                    }
-                }
-            }
-            if let Some(err) = last_error {
-                let _ = tx.send(Err(err));
-            } else {
-                let _ = tx.send(Ok(None));
-            }
-        });
-
-        match rx.recv_timeout(Duration::from_millis(EXT_CALL_TIMEOUT_MS)) {
-            Ok(res) => res,
-            Err(RecvTimeoutError::Timeout) => Ok(None),
-            Err(RecvTimeoutError::Disconnected) => Ok(None),
+        if let Some(bridge) = &self.bridge {
+            return bridge
+                .lock()
+                .map_err(|_| ExtensionHostError::ScriptError {
+                    script: PathBuf::from("extension-client"),
+                    message: "bridge lock poisoned".to_string(),
+                })?
+                .send_request(action, payload, &self.log_path)
+                .map(Some);
         }
+        Ok(None)
     }
 
     fn run_script(
