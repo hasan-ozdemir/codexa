@@ -70,6 +70,7 @@ function discoverScripts() {
 
   const scripts = [];
   const seen = new Set();
+  const selfPath = __filename ? path.resolve(__filename) : null;
   for (const dir of candidates) {
     if (!dir || seen.has(dir) || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
       continue;
@@ -79,6 +80,9 @@ function discoverScripts() {
       if (!entry.toLowerCase().endsWith(".js")) continue;
       const full = path.join(dir, entry);
       if (fs.statSync(full).isFile()) {
+        // Never treat the extension-client itself as an extension handler; doing
+        // so causes circular require warnings and timeouts.
+        if (selfPath && path.resolve(full) === selfPath) continue;
         scripts.push(full);
       }
     }
