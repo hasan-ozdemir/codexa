@@ -29,8 +29,9 @@ let LAST_SCRIPTS_SUMMARY = "";
 function log(msg) {
   if (!LOG_PATH) return;
   try {
-    const ts = (Date.now() / 1000).toFixed(3);
-    fs.appendFileSync(LOG_PATH, `${ts} [ext-client] ${msg}\n`);
+    const ts = Math.floor(Date.now() / 1000);
+    const stamp = `${Math.floor(ts / 60)}:${ts % 60}`;
+    fs.appendFileSync(LOG_PATH, `${stamp} [ext-client] ${msg}\n`);
   } catch {
     /* ignore */
   }

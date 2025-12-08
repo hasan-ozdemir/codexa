@@ -1140,15 +1140,12 @@ impl ExtensionHost {
     }
 
     fn log_static(log_path: &Path, message: impl AsRef<str>) {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs_f64())
-            .unwrap_or(0.0);
+        let (minutes, seconds) = Self::minute_second_now();
         if let Some(dir) = log_path.parent() {
             let _ = fs::create_dir_all(dir);
         }
         if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
-            let _ = writeln!(file, "{timestamp:.3} [tui] {}", message.as_ref());
+            let _ = writeln!(file, "{minutes}:{seconds} [tui] {}", message.as_ref());
         }
     }
 
@@ -1160,17 +1157,22 @@ impl ExtensionHost {
             return;
         }
         let log_path = &self.log_path;
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs_f64())
-            .unwrap_or(0.0);
-        let line = format!("{timestamp:.3} [tui] {}\n", message.as_ref());
+        let (minutes, seconds) = Self::minute_second_now();
+        let line = format!("{minutes}:{seconds} [tui] {}\n", message.as_ref());
         if let Some(dir) = log_path.parent() {
             let _ = fs::create_dir_all(dir);
         }
         if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
             let _ = file.write_all(line.as_bytes());
         }
+    }
+
+    fn minute_second_now() -> (u64, u64) {
+        let secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        (secs / 60, secs % 60)
     }
 
     fn content_to_string(value: &Value) -> Option<String> {

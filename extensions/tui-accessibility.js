@@ -14,8 +14,9 @@ let appReadyPlayed = false;
 function log(msg) {
   if (!LOG_PATH) return;
   try {
-    const ts = Date.now() / 1000;
-    require("fs").appendFileSync(LOG_PATH, `${ts.toFixed(3)} [a11y] ${msg}\n`);
+    const ts = Math.floor(Date.now() / 1000);
+    const stamp = `${Math.floor(ts / 60)}:${ts % 60}`;
+    require("fs").appendFileSync(LOG_PATH, `${stamp} [a11y] ${msg}\n`);
   } catch (err) {
     // best-effort logging only
   }
