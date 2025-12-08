@@ -17,7 +17,7 @@ const path = require("path");
 
 const ignoreSystemPrompts = (() => {
   const val = process.env.CODEX_HISTORY_IGNORE_SYSTEM_PROMPTS;
-  if (val === undefined) return true;
+  if (val === undefined) return false;
   return !["0", "false", "no"].includes(String(val).trim().toLowerCase());
 })();
 
