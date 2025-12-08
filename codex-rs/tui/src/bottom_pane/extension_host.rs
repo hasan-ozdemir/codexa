@@ -6,6 +6,7 @@ use serde_json::Value;
 use serde_json::json;
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::fs::OpenOptions;
@@ -26,6 +27,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
+use toml;
 use tracing::warn;
 
 use super::external_editor::ExternalEditorError;
@@ -42,6 +44,7 @@ struct ExtensionBridge {
 pub(crate) struct ExtensionHost {
     scripts: Vec<PathBuf>,
     config: ExtensionConfig,
+    config_overrides: HashMap<String, bool>,
     bridge: Option<Arc<Mutex<ExtensionBridge>>>,
     last_seed_mtime: RefCell<Option<SystemTime>>,
     log_path: PathBuf,
@@ -150,7 +153,7 @@ impl std::fmt::Display for ExtensionHostError {
 impl std::error::Error for ExtensionHostError {}
 
 impl ExtensionBridge {
-    fn spawn(port: u16, log_path: &Path) -> Option<Self> {
+    fn spawn(port: u16, log_path: &Path, cfg_env: &HashMap<String, bool>) -> Option<Self> {
         let script = ExtensionHost::extension_client_script().or_else(|| {
             ExtensionHost::log_static(
                 log_path,
@@ -162,6 +165,12 @@ impl ExtensionBridge {
         cmd.arg(&script)
             .env("CODEX_EXTENSION_PORT", port.to_string())
             .env("CODEX_EXTENSION_LOG", log_path)
+            .envs(
+                cfg_env
+                    .iter()
+                    .filter(|(k, _)| env::var_os(k).is_none())
+                    .map(|(k, v)| (k, if *v { "true" } else { "false" })),
+            )
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -312,11 +321,14 @@ impl ExtensionHost {
         // enumerate for logging/diagnostics only.
         let scripts = Self::discover_scripts();
         let log_path = Self::default_log_path();
-        let bridge = ExtensionBridge::spawn(5555, &log_path).map(|b| Arc::new(Mutex::new(b)));
+        let config_overrides = Self::load_user_config();
+        let bridge =
+            ExtensionBridge::spawn(5555, &log_path, &config_overrides).map(|b| Arc::new(Mutex::new(b)));
         let config = Self::load_config(&scripts, bridge.as_ref());
         let host = Self {
             scripts,
             config,
+            config_overrides,
             bridge,
             last_seed_mtime: RefCell::new(None),
             log_path,
@@ -1152,6 +1164,8 @@ impl ExtensionHost {
     pub(crate) fn log_event(&self, message: impl AsRef<str>) {
         let enabled = env::var("codex_extensions_log")
             .map(|v| v.eq_ignore_ascii_case("true"))
+            .ok()
+            .or_else(|| self.config_overrides.get("codex_extensions_log").copied())
             .unwrap_or(false);
         if !enabled {
             return;
@@ -1173,6 +1187,32 @@ impl ExtensionHost {
             .map(|d| d.as_secs())
             .unwrap_or(0);
         (secs / 60, secs % 60)
+    }
+
+    fn load_user_config() -> HashMap<String, bool> {
+        let mut map = HashMap::new();
+        let path = dirs::home_dir()
+            .map(|h| h.join(".codex").join("config.toml"))
+            .unwrap_or_else(|| PathBuf::from(".codex/config.toml"));
+        let data = fs::read_to_string(path);
+        let Ok(raw) = data else { return map };
+        let Ok(value) = raw.parse::<toml::Value>() else { return map };
+        for key in [
+            "a11y_hide_edit_marker",
+            "a11y_hide_prompt_hints",
+            "a11y_hide_statusbar_hints",
+            "a11y_editor_align_left",
+            "a11y_editor_borderline",
+            "a11y_keyboard_shortcuts",
+            "a11y_audio_cues",
+            "codex_extensions_log",
+            "codex_history_ignore_system_prompts",
+        ] {
+            if let Some(v) = value.get(key).and_then(toml::Value::as_bool) {
+                map.insert(key.to_string(), v);
+            }
+        }
+        map
     }
 
     fn content_to_string(value: &Value) -> Option<String> {
