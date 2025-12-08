@@ -1194,7 +1194,6 @@ mod tests {
             log_path: PathBuf::from("log"),
             session_path: RefCell::new(None),
             line_added_token: Arc::new(AtomicU64::new(token)),
-            ready_emitted: Arc::new(AtomicBool::new(false)),
         }
     }
 
