@@ -18,12 +18,14 @@ powershell -NoProfile -Command ^
   "  $ErrorActionPreference='Stop';" ^
   "  $v='%RELEASE_VERSION%';" ^
   "  $root='%REPO_ROOT%';" ^
+  "  $enc=New-Object System.Text.UTF8Encoding($false);" ^
   "  $jsons=@('codex-cli/package.json','sdk/typescript/package.json','codex-rs/responses-api-proxy/npm/package.json','shell-tool-mcp/package.json');" ^
   "  foreach($rel in $jsons){" ^
   "    $p=Join-Path $root $rel;" ^
   "    $obj=Get-Content $p -Raw | ConvertFrom-Json;" ^
   "    $obj.version=$v;" ^
-  "    $obj | ConvertTo-Json -Depth 50 | Set-Content -Encoding UTF8 $p" ^
+  "    $json=$obj | ConvertTo-Json -Depth 50;" ^
+  "    [IO.File]::WriteAllBytes($p,$enc.GetBytes($json))" ^
   "  }" ^
   "  $tomlPath=Join-Path $root 'codex-rs/Cargo.toml';" ^
   "  $lines=Get-Content $tomlPath;" ^
@@ -36,7 +38,8 @@ powershell -NoProfile -Command ^
   "    if($trim.StartsWith('version')){ $lines[$i] = 'version = \"'+$v+'\"'; $found=$true; break }" ^
   "  }" ^
   "  if(-not $found){throw 'workspace.package version not found'}" ^
-  "  Set-Content -Path $tomlPath -Value $lines -Encoding UTF8;" ^
+  "  $tomlText=($lines -join [Environment]::NewLine);" ^
+  "  [IO.File]::WriteAllBytes($tomlPath,$enc.GetBytes($tomlText))" ^
   "}"
 if errorlevel 1 (
     echo Version sync failed.
