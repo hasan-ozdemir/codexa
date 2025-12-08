@@ -15,21 +15,6 @@ const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
-function readRequest() {
-  const chunks = [];
-  return new Promise((resolve, reject) => {
-    process.stdin.on("data", (c) => chunks.push(c));
-    process.stdin.on("end", () => {
-      try {
-        const raw = Buffer.concat(chunks).toString("utf8") || "{}";
-        resolve(JSON.parse(raw));
-      } catch (err) {
-        reject(err);
-      }
-    });
-  });
-}
-
 function chooseEditor() {
   return (
     process.env.VISUAL ||
@@ -50,62 +35,71 @@ function log(msg) {
   }
 }
 
-function main() {
-  readRequest()
-    .then((req) => {
-      logPath = req?.log_path;
-      log(`request action=${req?.action}`);
-      if (req.action === "config") {
-        console.log(
-            JSON.stringify({
-            status: "ok",
-            payload: {
-              // Change shortcuts here; more than one keybinding allowed.
-              external_edit_keys: [{ code: "Char", char: "e", ctrl: true }],
-              history_prev_keys: [{ code: "PageUp", alt: true }],
-              history_next_keys: [{ code: "PageDown", alt: true }],
-              history_first_keys: [{ code: "Home", alt: true }],
-              history_last_keys: [{ code: "End", alt: true }],
-              // Override editor command if desired (string or array)
-              editor_command:
-                process.platform === "win32" ? "notepad" : "nano",
-            },
-          }),
-        );
-        return;
-      }
-      if (req.action !== "external_edit") {
-        console.log(JSON.stringify({ status: "skip" }));
-        return;
-      }
-      const editor = chooseEditor();
-      log(`external_edit launching editor=${editor}`);
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-ext-"));
-      const filePath = path.join(tmpDir, "input.txt");
-      fs.writeFileSync(filePath, req.text ?? "", "utf8");
+function handle(req) {
+  logPath = req?.log_path;
+  log(`request action=${req?.action}`);
+  if (req.action === "config") {
+    return {
+      status: "ok",
+      payload: {
+        // Change shortcuts here; more than one keybinding allowed.
+        external_edit_keys: [{ code: "Char", char: "e", ctrl: true }],
+        history_prev_keys: [{ code: "PageUp", alt: true }],
+        history_next_keys: [{ code: "PageDown", alt: true }],
+        history_first_keys: [{ code: "Home", alt: true }],
+        history_last_keys: [{ code: "End", alt: true }],
+        // Override editor command if desired (string or array)
+        editor_command: process.platform === "win32" ? "notepad" : "nano",
+      },
+    };
+  }
+  if (req.action !== "external_edit") {
+    return { status: "skip" };
+  }
+  const editor = chooseEditor();
+  log(`external_edit launching editor=${editor}`);
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-ext-"));
+  const filePath = path.join(tmpDir, "input.txt");
+  fs.writeFileSync(filePath, req.text ?? "", "utf8");
 
-      const result = spawnSync(editor, [filePath], {
-        stdio: "inherit",
-      });
-      if (result.status && result.status !== 0) {
-        log(`editor exited with status ${result.status}`);
-        console.log(
-          JSON.stringify({
-            status: "error",
-            message: `Editor exited with status ${result.status}`,
-          }),
-        );
-        return;
-      }
+  const result = spawnSync(editor, [filePath], {
+    stdio: "inherit",
+  });
+  if (result.status && result.status !== 0) {
+    log(`editor exited with status ${result.status}`);
+    return {
+      status: "error",
+      message: `Editor exited with status ${result.status}`,
+    };
+  }
 
-      const output = fs.readFileSync(filePath, "utf8");
-      const trimmed = output.replace(/\r?\n$/, "");
-      log("external_edit returning updated text");
-      console.log(JSON.stringify({ status: "ok", text: trimmed }));
-    })
-    .catch((err) => {
-      console.log(JSON.stringify({ status: "error", message: String(err) }));
-    });
+  const output = fs.readFileSync(filePath, "utf8");
+  const trimmed = output.replace(/\r?\n$/, "");
+  log("external_edit returning updated text");
+  return { status: "ok", text: trimmed };
 }
 
-main();
+function main() {
+  const chunks = [];
+  process.stdin.on("data", (c) => chunks.push(c));
+  process.stdin.on("end", () => {
+    let req = {};
+    try {
+      req = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+    } catch (err) {
+      console.log(JSON.stringify({ status: "error", message: String(err) }));
+      return;
+    }
+    try {
+      console.log(JSON.stringify(handle(req)));
+    } catch (err) {
+      console.log(JSON.stringify({ status: "error", message: String(err) }));
+    }
+  });
+}
+
+if (require.main === module) {
+  main();
+} else {
+  module.exports = { handle };
+}

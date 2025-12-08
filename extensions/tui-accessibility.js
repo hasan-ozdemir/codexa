@@ -150,5 +150,21 @@ function main() {
   }
 }
 
-main();
+function handle(req) {
+  LOG_PATH = req?.log_path || null;
+  if (req.action === "config") {
+    handleConfig();
+    return;
+  }
+  if (req.action === "notify") {
+    handleNotify(req.payload || {}, req);
+    return;
+  }
+  respond({ status: "skip" });
+}
 
+if (require.main === module) {
+  main();
+} else {
+  module.exports = { handle };
+}

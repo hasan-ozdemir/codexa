@@ -13,11 +13,13 @@ use std::io;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Write;
+use std::net::TcpStream;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -28,9 +30,18 @@ use tracing::warn;
 use super::external_editor::ExternalEditorError;
 
 #[derive(Debug)]
+struct ExtensionBridge {
+    child: std::process::Child,
+    reader: BufReader<TcpStream>,
+    writer: TcpStream,
+    next_id: u64,
+}
+
+#[derive(Debug)]
 pub(crate) struct ExtensionHost {
     scripts: Vec<PathBuf>,
     config: ExtensionConfig,
+    bridge: Option<Arc<Mutex<ExtensionBridge>>>,
     last_seed_mtime: RefCell<Option<SystemTime>>,
     log_path: PathBuf,
     session_path: RefCell<Option<PathBuf>>,
@@ -137,15 +148,148 @@ impl std::fmt::Display for ExtensionHostError {
 
 impl std::error::Error for ExtensionHostError {}
 
+impl ExtensionBridge {
+    fn spawn(port: u16, log_path: &Path) -> Option<Self> {
+        let script = ExtensionHost::extension_client_script()?;
+        let mut cmd = Command::new("node");
+        cmd.arg(&script)
+            .env("CODEX_EXTENSION_PORT", port.to_string())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let child = cmd.spawn().ok()?;
+
+        let addr = format!("127.0.0.1:{port}");
+        for _ in 0..50 {
+            if let Some(status) = child.try_wait().ok().flatten() {
+                tracing::warn!("extension-client exited early with {status}");
+                return None;
+            }
+            if let Ok(stream) = TcpStream::connect(&addr) {
+                let reader_stream = stream.try_clone().ok()?;
+                let mut reader = BufReader::new(reader_stream);
+                let writer = stream;
+                // Drain any banner line if present
+                let mut _tmp = String::new();
+                let _ = reader.read_line(&mut _tmp);
+                return Some(Self {
+                    child,
+                    reader,
+                    writer,
+                    next_id: 1,
+                });
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        None
+    }
+
+    fn send_request(
+        &mut self,
+        action: &str,
+        payload: serde_json::Value,
+        log_path: &Path,
+    ) -> Result<ExtensionReply, ExtensionHostError> {
+        let id = self.next_id;
+        self.next_id += 1;
+
+        let mut map = Map::new();
+        map.insert("id".to_string(), json!(id));
+        map.insert("action".to_string(), json!(action));
+        map.insert(
+            "log_path".to_string(),
+            json!(log_path.to_string_lossy().to_string()),
+        );
+        if let Value::Object(obj) = payload {
+            for (k, v) in obj {
+                map.insert(k, v);
+            }
+        } else {
+            map.insert("payload".to_string(), payload);
+        }
+
+        let line = Value::Object(map).to_string();
+        self.writer
+            .write_all(format!("{line}\n").as_bytes())
+            .map_err(|error| ExtensionHostError::Io {
+                script: PathBuf::from("extension-client"),
+                error,
+            })?;
+        let mut buf = String::new();
+        loop {
+            buf.clear();
+            let read = self
+                .reader
+                .read_line(&mut buf)
+                .map_err(|error| ExtensionHostError::Io {
+                    script: PathBuf::from("extension-client"),
+                    error,
+                })?;
+            if read == 0 {
+                return Err(ExtensionHostError::ScriptError {
+                    script: PathBuf::from("extension-client"),
+                    message: "connection closed".to_string(),
+                });
+            }
+            let parsed: Value = match serde_json::from_str(buf.trim_end()) {
+                Ok(v) => v,
+                Err(error) => {
+                    return Err(ExtensionHostError::InvalidJson {
+                        script: PathBuf::from("extension-client"),
+                        raw: buf.clone(),
+                        error,
+                    });
+                }
+            };
+            let resp_id = parsed.get("id").and_then(Value::as_u64).unwrap_or(0);
+            if resp_id != id {
+                continue;
+            }
+            let status = parsed
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("skip");
+            return match status {
+                "ok" => Ok(ExtensionReply::Ok {
+                    text: parsed.get("text").and_then(Value::as_str).map(String::from),
+                    payload: parsed.get("payload").cloned(),
+                }),
+                "skip" => Ok(ExtensionReply::Skip),
+                "error" => Err(ExtensionHostError::ScriptError {
+                    script: PathBuf::from("extension-client"),
+                    message: parsed
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .unwrap_or("extension returned error")
+                        .to_string(),
+                }),
+                _ => Err(ExtensionHostError::MissingStatus {
+                    script: PathBuf::from("extension-client"),
+                    raw: buf.clone(),
+                }),
+            };
+        }
+    }
+}
+
+impl Drop for ExtensionBridge {
+    fn drop(&mut self) {
+        let _ = self.send_request("shutdown", json!({}), Path::new(""));
+        let _ = self.child.kill();
+    }
+}
+
 #[cfg_attr(test, allow(dead_code))]
 impl ExtensionHost {
     pub(crate) fn new() -> Self {
         let scripts = Self::discover_scripts();
-        let config = Self::load_config(&scripts);
         let log_path = Self::default_log_path();
+        let bridge = ExtensionBridge::spawn(5555, &log_path).map(|b| Arc::new(Mutex::new(b)));
+        let config = Self::load_config(&scripts, bridge.as_ref());
         let host = Self {
             scripts,
             config,
+            bridge,
             last_seed_mtime: RefCell::new(None),
             log_path,
             session_path: RefCell::new(None),
@@ -213,12 +357,13 @@ impl ExtensionHost {
         if matches!(event, "completion_end" | "conversation_interrupted") {
             self.cancel_line_added_timer();
         }
-        if self.scripts.is_empty() {
+        if self.bridge.is_none() && self.scripts.is_empty() {
             return;
         }
         if event == "line_added" {
             let token = self.line_added_token.fetch_add(1, Ordering::SeqCst) + 1;
             let scripts = self.scripts.clone();
+            let bridge = self.bridge.clone();
             let log_path = self.log_path.clone();
             let line_added_token = self.line_added_token.clone();
             std::thread::spawn(move || {
@@ -227,22 +372,35 @@ impl ExtensionHost {
                     return;
                 }
                 let payload = json!({ "event": "line_added" });
-                for script in scripts {
-                    let request =
-                        ExtensionHost::build_request("notify", payload.clone(), &log_path);
-                    let _ = ExtensionHost::run_script(&script, "notify", request, &log_path);
+                if let Some(bridge) = bridge {
+                    if let Ok(mut guard) = bridge.lock() {
+                        let _ = guard.send_request("notify", payload, &log_path);
+                    }
+                } else {
+                    for script in scripts {
+                        let request =
+                            ExtensionHost::build_request("notify", payload.clone(), &log_path);
+                        let _ = ExtensionHost::run_script(&script, "notify", request, &log_path);
+                    }
                 }
             });
         } else {
             let scripts = self.scripts.clone();
+            let bridge = self.bridge.clone();
             let log_path = self.log_path.clone();
             let event_string = event.to_string();
             std::thread::spawn(move || {
                 let payload = json!({ "event": event_string });
-                for script in scripts {
-                    let request =
-                        ExtensionHost::build_request("notify", payload.clone(), &log_path);
-                    let _ = ExtensionHost::run_script(&script, "notify", request, &log_path);
+                if let Some(bridge) = bridge {
+                    if let Ok(mut guard) = bridge.lock() {
+                        let _ = guard.send_request("notify", payload, &log_path);
+                    }
+                } else {
+                    for script in scripts {
+                        let request =
+                            ExtensionHost::build_request("notify", payload.clone(), &log_path);
+                        let _ = ExtensionHost::run_script(&script, "notify", request, &log_path);
+                    }
                 }
             });
         }
@@ -393,6 +551,14 @@ impl ExtensionHost {
         action: &str,
         payload: Value,
     ) -> Result<Option<ExtensionReply>, ExtensionHostError> {
+        if let Some(bridge) = &self.bridge {
+            let mut guard = bridge.lock().expect("bridge mutex poisoned");
+            match guard.send_request(action, payload, &self.log_path) {
+                Ok(ExtensionReply::Skip) => return Ok(None),
+                Ok(reply) => return Ok(Some(reply)),
+                Err(err) => return Err(err),
+            }
+        }
         if self.scripts.is_empty() {
             self.log_event(format!("No extensions to handle action {action}; skipping"));
             return Ok(None);
@@ -584,6 +750,11 @@ impl ExtensionHost {
                     if path.is_file()
                         && let Some(ext) = path.extension().and_then(|s| s.to_str())
                         && ext.eq_ignore_ascii_case("js")
+                        && path
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .map(|n| n != "extension-client.js")
+                            .unwrap_or(true)
                     {
                         scripts.push(path);
                     }
@@ -595,8 +766,33 @@ impl ExtensionHost {
         scripts
     }
 
-    fn load_config(scripts: &[PathBuf]) -> ExtensionConfig {
-        let cfg = ExtensionConfig {
+    fn extension_client_script() -> Option<PathBuf> {
+        let mut candidates: Vec<PathBuf> = Vec::new();
+        if let Ok(dir) = env::var("CODEX_TUI_EXTENSION_DIR") {
+            candidates.push(PathBuf::from(dir));
+        }
+        if let Ok(exe) = env::current_exe() {
+            for ancestor in exe.ancestors() {
+                candidates.push(ancestor.join("extensions"));
+            }
+        }
+        if let Ok(cwd) = env::current_dir() {
+            candidates.push(cwd.join("extensions"));
+        }
+        for dir in candidates {
+            let path = dir.join("extension-client.js");
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+        None
+    }
+
+    fn load_config(
+        scripts: &[PathBuf],
+        bridge: Option<&Arc<Mutex<ExtensionBridge>>>,
+    ) -> ExtensionConfig {
+        let mut cfg = ExtensionConfig {
             external_edit_keys: vec![KeyBinding::ctrl_char('e')],
             history_prev_keys: vec![KeyBinding::alt_code(KeyCode::Up)],
             history_next_keys: vec![KeyBinding::alt_code(KeyCode::Down)],
@@ -614,7 +810,23 @@ impl ExtensionHost {
             a11y_audio_cues: None,
         };
 
-        let mut cfg = scripts.iter().fold(cfg, |mut acc, script| {
+        if let Some(bridge) = bridge {
+            let payload = json!({});
+            if let Ok(ExtensionReply::Ok { payload, .. }) = bridge
+                .lock()
+                .expect("bridge mutex poisoned")
+                .send_request("config", payload, &Self::default_log_path())
+            {
+                if let Some(Value::Object(obj)) = payload {
+                    if let Some(parsed) = Self::parse_config(Value::Object(obj)) {
+                        cfg = Self::merge_config(cfg, parsed);
+                    }
+                }
+            }
+            return cfg;
+        }
+
+        cfg = scripts.iter().fold(cfg, |mut acc, script| {
             let log_path = Self::default_log_path();
             let request = Self::build_request("config", json!({}), &log_path);
             let response = Self::run_script(script, "config", request, &log_path);
@@ -624,51 +836,7 @@ impl ExtensionHost {
             if let Some(p) = payload
                 && let Some(parsed) = Self::parse_config(p)
             {
-                if let Some(v) = parsed.external_edit_keys {
-                    acc.external_edit_keys = v;
-                }
-                if let Some(v) = parsed.history_prev_keys {
-                    acc.history_prev_keys = v;
-                }
-                if let Some(v) = parsed.history_next_keys {
-                    acc.history_next_keys = v;
-                }
-                if let Some(v) = parsed.history_prev_page_keys {
-                    acc.history_prev_page_keys = v;
-                }
-                if let Some(v) = parsed.history_next_page_keys {
-                    acc.history_next_page_keys = v;
-                }
-                if let Some(v) = parsed.history_first_keys {
-                    acc.history_first_keys = v;
-                }
-                if let Some(v) = parsed.history_last_keys {
-                    acc.history_last_keys = v;
-                }
-                if let Some(v) = parsed.editor_command {
-                    acc.editor_command = Some(v);
-                }
-                if let Some(v) = parsed.hide_edit_marker {
-                    acc.hide_edit_marker = Some(v);
-                }
-                if let Some(v) = parsed.hide_prompt_hints {
-                    acc.hide_prompt_hints = Some(v);
-                }
-                if let Some(v) = parsed.hide_statusbar_hints {
-                    acc.hide_statusbar_hints = Some(v);
-                }
-                if let Some(v) = parsed.align_left {
-                    acc.align_left = Some(v);
-                }
-                if let Some(v) = parsed.editor_borderline {
-                    acc.editor_borderline = Some(v);
-                }
-                if let Some(v) = parsed.a11y_keyboard_shortcuts {
-                    acc.a11y_keyboard_shortcuts = Some(v);
-                }
-                if let Some(v) = parsed.a11y_audio_cues {
-                    acc.a11y_audio_cues = Some(v);
-                }
+                acc = Self::merge_config(acc, parsed);
             }
             acc
         });
@@ -748,6 +916,55 @@ impl ExtensionHost {
         }
 
         Some(cfg)
+    }
+
+    fn merge_config(mut acc: ExtensionConfig, parsed: ConfigDelta) -> ExtensionConfig {
+        if let Some(v) = parsed.external_edit_keys {
+            acc.external_edit_keys = v;
+        }
+        if let Some(v) = parsed.history_prev_keys {
+            acc.history_prev_keys = v;
+        }
+        if let Some(v) = parsed.history_next_keys {
+            acc.history_next_keys = v;
+        }
+        if let Some(v) = parsed.history_prev_page_keys {
+            acc.history_prev_page_keys = v;
+        }
+        if let Some(v) = parsed.history_next_page_keys {
+            acc.history_next_page_keys = v;
+        }
+        if let Some(v) = parsed.history_first_keys {
+            acc.history_first_keys = v;
+        }
+        if let Some(v) = parsed.history_last_keys {
+            acc.history_last_keys = v;
+        }
+        if let Some(v) = parsed.editor_command {
+            acc.editor_command = Some(v);
+        }
+        if let Some(v) = parsed.hide_edit_marker {
+            acc.hide_edit_marker = Some(v);
+        }
+        if let Some(v) = parsed.hide_prompt_hints {
+            acc.hide_prompt_hints = Some(v);
+        }
+        if let Some(v) = parsed.hide_statusbar_hints {
+            acc.hide_statusbar_hints = Some(v);
+        }
+        if let Some(v) = parsed.align_left {
+            acc.align_left = Some(v);
+        }
+        if let Some(v) = parsed.editor_borderline {
+            acc.editor_borderline = Some(v);
+        }
+        if let Some(v) = parsed.a11y_keyboard_shortcuts {
+            acc.a11y_keyboard_shortcuts = Some(v);
+        }
+        if let Some(v) = parsed.a11y_audio_cues {
+            acc.a11y_audio_cues = Some(v);
+        }
+        acc
     }
 
     fn parse_key_list(value: &Value) -> Vec<KeyBinding> {
