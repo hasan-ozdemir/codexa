@@ -834,7 +834,7 @@ impl ExtensionHost {
         bridge: Option<&Arc<Mutex<ExtensionBridge>>>,
     ) -> ExtensionConfig {
         let mut cfg = ExtensionConfig {
-            external_edit_keys: vec![KeyBinding::ctrl_char('e')],
+            external_edit_keys: vec![KeyBinding::ctrl_char('g')],
             history_prev_keys: vec![KeyBinding::alt_code(KeyCode::Up)],
             history_next_keys: vec![KeyBinding::alt_code(KeyCode::Down)],
             history_prev_page_keys: vec![KeyBinding::alt_code(KeyCode::PageUp)],

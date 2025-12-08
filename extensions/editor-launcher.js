@@ -44,7 +44,7 @@ function handle(req) {
       status: "ok",
       payload: {
         // Change shortcuts here; more than one keybinding allowed.
-        external_edit_keys: [{ code: "Char", char: "e", ctrl: true }],
+        external_edit_keys: [{ code: "Char", char: "g", ctrl: true }],
         history_prev_keys: [{ code: "PageUp", alt: true }],
         history_next_keys: [{ code: "PageDown", alt: true }],
         history_first_keys: [{ code: "Home", alt: true }],
