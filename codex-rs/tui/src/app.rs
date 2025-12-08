@@ -8,7 +8,6 @@ use crate::diff_render::DiffSummary;
 use crate::exec_command::strip_bash_lc_and_escape;
 use crate::file_search::FileSearchManager;
 use crate::history_cell::HistoryCell;
-use crate::history_cell::SessionInfoCell;
 use crate::history_cell::UserHistoryCell;
 use crate::model_migration::ModelMigrationOutcome;
 use crate::model_migration::migration_copy_for_config;
@@ -53,7 +52,6 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
-use std::any::TypeId;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -1291,25 +1289,9 @@ fn export_last_turn_to_temp_file(
 }
 
 fn last_turn_cells(transcript: &[Arc<dyn HistoryCell>]) -> Option<Vec<Arc<dyn HistoryCell>>> {
-    if transcript.is_empty() {
-        return None;
-    }
-    let session_type = TypeId::of::<SessionInfoCell>();
-    let user_type = TypeId::of::<UserHistoryCell>();
-    let type_of = |cell: &Arc<dyn HistoryCell>| cell.as_any().type_id();
-
-    let start = transcript
-        .iter()
-        .rposition(|c| type_of(c) == session_type)
-        .map_or(0, |idx| idx + 1);
-
     let user_idx = transcript
         .iter()
-        .enumerate()
-        .skip(start)
-        .rev()
-        .find_map(|(idx, cell)| (type_of(cell) == user_type).then_some(idx))?;
-
+        .rposition(|cell| cell.as_any().downcast_ref::<UserHistoryCell>().is_some())?;
     Some(transcript.iter().skip(user_idx).cloned().collect())
 }
 
