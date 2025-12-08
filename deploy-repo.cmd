@@ -12,6 +12,11 @@ set "REPO_ROOT=%~dp0"
 rem Version to publish; edit NPM_DEBUG_VERSION here.
 set "npm_debug_version=0.65.1"
 set "RELEASE_VERSION=%npm_debug_version%"
+
+rem Parse optional flags
+set "FORCE_REBUILD=0"
+if /I "%~1"=="-rb" set "FORCE_REBUILD=1"
+
 echo === Syncing repository versions to %RELEASE_VERSION% ===
 powershell -NoProfile -Command ^
   "& { " ^
@@ -51,6 +56,14 @@ set "DIST_DIR=%REPO_ROOT%\dist\npm"
 set "STAGE_DIR=%DIST_DIR%\codex-%RELEASE_VERSION%"
 set "VENDOR_SRC=%DIST_DIR%\vendor-src-%RELEASE_VERSION%"
 set "PACK_TGZ=%DIST_DIR%\openai-codex-%RELEASE_VERSION%.tgz"
+
+if "%FORCE_REBUILD%"=="1" (
+    echo === Full rebuild requested (-rb): cleaning outputs ===
+    if exist "%DIST_DIR%" rd /s /q "%DIST_DIR%"
+    pushd "%REPO_ROOT%\codex-rs" >nul || exit /b 1
+    cargo clean
+    popd >nul
+)
 
 rem Ensure output directories exist
 if not exist "%DIST_DIR%" mkdir "%DIST_DIR%"
