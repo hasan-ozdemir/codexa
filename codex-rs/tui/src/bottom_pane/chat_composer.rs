@@ -123,6 +123,7 @@ pub(crate) struct ChatComposer {
     context_window_used_tokens: Option<i64>,
     extension_host: ExtensionHost,
     extension_keys: ExtensionKeyConfig,
+    draft_buffer: Option<DraftBuffer>,
     skills_enabled: bool,
     hide_edit_marker: bool,
     hide_prompt_hints: bool,
@@ -144,7 +145,13 @@ struct ExtensionKeyConfig {
     history_last: Vec<KeyBinding>,
 }
 
-/// Popup state – at most one can be visible at any time.
+#[derive(Clone, Debug, Default)]
+struct DraftBuffer {
+    text: String,
+    cursor: usize,
+}
+
+/// Popup state - at most one can be visible at any time.
 enum ActivePopup {
     None,
     Command(CommandPopup),
@@ -204,6 +211,7 @@ impl ChatComposer {
             context_window_used_tokens: None,
             extension_host,
             extension_keys: ExtensionKeyConfig::default(),
+            draft_buffer: None,
             skills_enabled: false,
             hide_edit_marker: cfg
                 .hide_edit_marker
@@ -372,6 +380,7 @@ impl ChatComposer {
         }
         let previous = self.current_text();
         self.set_text_content(String::new());
+        self.draft_buffer = None;
         self.history.reset_navigation();
         self.history.record_local_submission(&previous);
         Some(previous)
@@ -1291,6 +1300,7 @@ impl ChatComposer {
                     self.history.record_local_submission(&text);
                     self.extension_host.history_push(&text);
                 }
+                self.draft_buffer = None;
                 // Do not clear attached_images here; ChatWidget drains them via take_recent_submission_images().
                 (InputResult::Submitted(text), true)
             }
@@ -1299,13 +1309,18 @@ impl ChatComposer {
     }
 
     #[cfg(test)]
-    fn extension_history_navigation(&self, code: KeyCode) -> Option<String> {
+    fn extension_history_navigation(&mut self, code: KeyCode) -> Option<String> {
         let _ = code;
         None
     }
 
     #[cfg(not(test))]
-    fn extension_history_navigation(&self, code: KeyCode) -> Option<String> {
+    fn extension_history_navigation(&mut self, code: KeyCode) -> Option<String> {
+        if self.draft_buffer.is_none() {
+            let text = self.current_text();
+            let cursor = self.textarea.cursor();
+            self.draft_buffer = Some(DraftBuffer { text, cursor });
+        }
         let text = match code {
             KeyCode::Up => self.extension_host.history_prev(),
             KeyCode::Down => self.extension_host.history_next(),
@@ -1315,6 +1330,13 @@ impl ChatComposer {
             KeyCode::End => self.extension_host.history_last(),
             _ => None,
         }?;
+        if text.is_empty() && matches!(code, KeyCode::Down | KeyCode::PageDown) {
+            if let Some(draft) = self.draft_buffer.take() {
+                self.set_text_content(draft.text);
+                self.textarea.set_cursor(draft.cursor);
+                return Some(self.textarea.text().to_string());
+            }
+        }
         Some(text)
     }
 

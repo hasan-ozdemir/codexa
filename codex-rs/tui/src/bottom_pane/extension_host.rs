@@ -1252,10 +1252,13 @@ mod tests {
         ExtensionHost {
             scripts: Vec::new(),
             config: ExtensionConfig::default(),
+            bridge: None,
             last_seed_mtime: RefCell::new(None),
             log_path: PathBuf::from("log"),
             session_path: RefCell::new(None),
             line_added_token: Arc::new(AtomicU64::new(token)),
+            ready_emitted: Arc::new(AtomicBool::new(false)),
+            ready_token: Arc::new(AtomicU64::new(0)),
         }
     }
 
