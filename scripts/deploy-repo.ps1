@@ -3,6 +3,7 @@ param(
     [string] $Version,
     [Parameter(Mandatory = $true)]
     [string] $RepoRoot,
+    [Alias('rb','RB')]
     [switch] $Rebuild
 )
 
