@@ -370,6 +370,10 @@ impl ExtensionHost {
     pub(crate) fn notify_event(&self, event: &str) {
         if matches!(event, "completion_end" | "conversation_interrupted") {
             self.cancel_line_added_timer();
+            self.schedule_ready_after_idle();
+        }
+        if matches!(event, "line_added" | "prompt_submitted") {
+            self.bump_ready_token();
         }
         if self.bridge.is_none() {
             return;
@@ -411,10 +415,11 @@ impl ExtensionHost {
     }
 
     fn emit_ready_once(&self) {
-        if self.ready_emitted.swap(true, Ordering::SeqCst) {
-            return;
-        }
         self.schedule_ready_after_idle();
+    }
+
+    fn bump_ready_token(&self) {
+        self.ready_token.fetch_add(1, Ordering::SeqCst);
     }
 
     fn schedule_ready_after_idle(&self) {
