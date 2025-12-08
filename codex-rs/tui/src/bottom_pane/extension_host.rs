@@ -899,6 +899,7 @@ impl ExtensionHost {
             KeyCode::Down,
             KeyModifiers::NONE,
         );
+        Self::dedup_all_keys(&mut cfg);
 
         cfg
     }
@@ -919,6 +920,24 @@ impl ExtensionHost {
             normalized.push(KeyBinding::ctrl_char('g'));
         }
         *keys = normalized;
+    }
+
+    fn dedup_all_keys(cfg: &mut ExtensionConfig) {
+        Self::dedup_keys(&mut cfg.external_edit_keys);
+        Self::dedup_keys(&mut cfg.history_prev_keys);
+        Self::dedup_keys(&mut cfg.history_next_keys);
+        Self::dedup_keys(&mut cfg.history_prev_page_keys);
+        Self::dedup_keys(&mut cfg.history_next_page_keys);
+        Self::dedup_keys(&mut cfg.history_first_keys);
+        Self::dedup_keys(&mut cfg.history_last_keys);
+    }
+
+    fn dedup_keys(keys: &mut Vec<KeyBinding>) {
+        let mut seen: HashSet<String> = HashSet::new();
+        keys.retain(|k| {
+            let id = format!("{:?}-{}", k.code, k.modifiers.bits());
+            seen.insert(id)
+        });
     }
 
     #[allow(dead_code)]
