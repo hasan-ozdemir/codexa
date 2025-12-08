@@ -10,10 +10,10 @@
  *      { status: "error", message: "<reason>" }
  */
 
-import fs from "fs";
-import os from "os";
-import path from "path";
-import { spawnSync } from "child_process";
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const { spawnSync } = require("child_process");
 
 function readRequest() {
   const chunks = [];
