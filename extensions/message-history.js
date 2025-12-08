@@ -342,13 +342,6 @@ function isSystemGenerated(text) {
   return false;
 }
 
-function clampCursor(cursor, length) {
-  if (!Number.isInteger(cursor)) return length;
-  if (cursor < 0) return 0;
-  if (cursor > length) return length;
-  return cursor;
-}
-
 function handleSeed(req) {
   const sessionId = activeSessionId(req);
   const { entries: entriesFile, state: stateFile } = filesForSession(sessionId);
