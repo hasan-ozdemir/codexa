@@ -15,9 +15,11 @@ set "RELEASE_VERSION=%npm_debug_version%"
 
 rem Parse optional flags (any position)
 set "FORCE_REBUILD=0"
-for %%A in (%*) do (
-    if /I "%%~A"=="-rb" set "FORCE_REBUILD=1"
-    if /I "%%~A"=="/rb" set "FORCE_REBUILD=1"
+if not "%~1"=="" (
+    for %%A in (%*) do (
+        if /I "%%~A"=="-rb" set "FORCE_REBUILD=1"
+        if /I "%%~A"=="/rb" set "FORCE_REBUILD=1"
+    )
 )
 
 echo === Syncing repository versions to %RELEASE_VERSION% ===
