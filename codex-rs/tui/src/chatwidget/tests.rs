@@ -367,7 +367,6 @@ async fn helpers_are_available_and_do_not_panic() {
         skills: None,
         is_first_run: true,
         model_family,
-        resolved_model,
     };
     let mut w = ChatWidget::new(init, conversation_manager);
     // Basic construction sanity.
@@ -410,7 +409,6 @@ fn make_chatwidget_manual(
         active_cell: None,
         config: cfg.clone(),
         model_family: ModelsManager::construct_model_family_offline(&resolved_model, &cfg),
-        model: resolved_model.clone(),
         auth_manager: auth_manager.clone(),
         models_manager: Arc::new(ModelsManager::new(auth_manager)),
         session_header: SessionHeader::new(resolved_model.clone()),

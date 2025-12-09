@@ -330,8 +330,7 @@ impl App {
                     feedback: feedback.clone(),
                     skills: skills.clone(),
                     is_first_run,
-                    model_family,
-                    resolved_model: model.clone(),
+                    model_family: model_family.clone(),
                 };
                 ChatWidget::new(init, conversation_manager.clone())
             }
@@ -358,8 +357,7 @@ impl App {
                     feedback: feedback.clone(),
                     skills: skills.clone(),
                     is_first_run,
-                    model_family,
-                    resolved_model: model.clone(),
+                    model_family: model_family.clone(),
                 };
                 ChatWidget::new_from_existing(
                     init,
@@ -523,11 +521,10 @@ impl App {
                     feedback: self.feedback.clone(),
                     skills: self.skills.clone(),
                     is_first_run: false,
-                    model_family,
-                    resolved_model: self.current_model.clone(),
+                    model_family: model_family.clone(),
                 };
                 self.chat_widget = ChatWidget::new(init, self.server.clone());
-                self.current_model = self.chat_widget.model_slug().to_string();
+                self.current_model = model_family.get_model_slug().to_string();
                 if let Some(summary) = summary {
                     let mut lines: Vec<Line<'static>> = vec![summary.usage_line.clone().into()];
                     if let Some(command) = summary.resume_command {
@@ -576,14 +573,13 @@ impl App {
                                     skills: self.skills.clone(),
                                     is_first_run: false,
                                     model_family: model_family.clone(),
-                                    resolved_model: self.current_model.clone(),
                                 };
                                 self.chat_widget = ChatWidget::new_from_existing(
                                     init,
                                     resumed.conversation,
                                     resumed.session_configured,
                                 );
-                                self.current_model = self.chat_widget.model_slug().to_string();
+                                self.current_model = model_family.get_model_slug().to_string();
                                 if let Some(summary) = summary {
                                     let mut lines: Vec<Line<'static>> =
                                         vec![summary.usage_line.clone().into()];
