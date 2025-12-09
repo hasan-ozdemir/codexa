@@ -55,7 +55,9 @@ function playSound(file) {
   const { spawn } = require("child_process");
   const fs = require("fs");
   const bundled = path.join(__dirname, "sounds", file);
-  if (!fs.existsSync(bundled)) {
+  const exists = fs.existsSync(bundled);
+  log(`playSound request file=${file} candidate=${bundled} exists=${exists}`);
+  if (!exists) {
     log(`playSound missing sound file ${file} (expected ${bundled})`);
     return false;
   }
@@ -65,6 +67,7 @@ function playSound(file) {
     if (currentSound && !currentSound.killed) {
       currentSound.kill();
     }
+    log(`playSound spawning powershell for ${full}`);
     const child = spawn(
       "powershell.exe",
       [
@@ -82,6 +85,8 @@ function playSound(file) {
       }
       if (code !== 0) {
         log(`playSound exit ${code} for ${file} (resolved ${full})`);
+      } else {
+        log(`playSound completed for ${file}`);
       }
     });
     child.on("error", (err) => {
@@ -108,21 +113,25 @@ function handleNotify(payload, req) {
   }
   log(`notify event=${event}`);
   if (event === "line_end" || event === "line_added") {
+    log("notify choosing sound PushButtonUp.wav");
     const ok = playSound("PushButtonUp.wav");
     respond(ok ? { status: "ok" } : { status: "error", message: "sound failed" });
     return;
   }
   if (event === "prompt_submitted") {
+    log("notify choosing sound TypeDing2.wav");
     const ok = playSound("TypeDing2.wav");
     respond(ok ? { status: "ok" } : { status: "error", message: "sound failed" });
     return;
   }
   if (event === "conversation_interrupted") {
+    log("notify choosing sound TableLayerExit.wav");
     const ok = playSound("TableLayerExit.wav");
     respond(ok ? { status: "ok" } : { status: "error", message: "sound failed" });
     return;
   }
   if (event === "completion_end") {
+    log("notify choosing sound ascend.wav");
     const ok = playSound("ascend.wav");
     respond(ok ? { status: "ok" } : { status: "error", message: "sound failed" });
     return;
@@ -134,6 +143,7 @@ function handleNotify(payload, req) {
     }
     appReadyPlayed = true;
     // Use bundled notify.wav so it also works inside the packaged npm install.
+    log("notify choosing sound notify.wav");
     const ok = playSound("notify.wav");
     respond(ok ? { status: "ok" } : { status: "error", message: "sound failed" });
     return;
