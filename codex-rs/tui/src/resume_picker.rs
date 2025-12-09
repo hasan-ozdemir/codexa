@@ -679,25 +679,32 @@ fn extract_session_meta_from_head(head: &[serde_json::Value]) -> (Option<PathBuf
 }
 
 fn paths_match(a: &Path, b: &Path) -> bool {
+    fn norm_str(p: &Path) -> String {
+        let s = p
+            .canonicalize()
+            .unwrap_or_else(|_| p.to_path_buf())
+            .to_string_lossy()
+            .to_string();
+        s.replace('\\', "/")
+            .trim_start_matches("//?/")
+            .trim_start_matches("//?/")
+            .trim_start_matches("\\\\?\\")
+            .trim_start_matches("\\\\?/")
+            .to_ascii_lowercase()
+    }
+
     #[cfg(windows)]
     {
-        fn norm(p: &Path) -> String {
-            let canon = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-            let mut s = canon.to_string_lossy().replace('/', "\\");
-            if let Some(rest) = s.strip_prefix("\\\\?\\") {
-                s = rest.to_string();
-            }
-            s.to_lowercase()
-        }
-        norm(a) == norm(b)
+        let na = norm_str(a);
+        let nb = norm_str(b);
+        na == nb || na.ends_with(&nb) || nb.ends_with(&na)
     }
 
     #[cfg(not(windows))]
     {
-        if let (Ok(ca), Ok(cb)) = (a.canonicalize(), b.canonicalize()) {
-            return ca == cb;
-        }
-        a == b
+        let na = norm_str(a);
+        let nb = norm_str(b);
+        na == nb
     }
 }
 
