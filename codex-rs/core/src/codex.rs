@@ -191,9 +191,12 @@ impl Codex {
         let model = models_manager
             .get_model(config.model.clone().as_deref())
             .await;
+        let model_family = models_manager
+            .construct_model_family(model.as_str(), &config)
+            .await;
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
-            model: model.clone(),
+            model_family,
             model_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
@@ -330,7 +333,7 @@ pub(crate) struct SessionConfiguration {
     provider: ModelProviderInfo,
 
     /// If not specified, server will use its default model.
-    model: String,
+    model_family: ModelFamily,
 
     model_reasoning_effort: Option<ReasoningEffortConfig>,
     model_reasoning_summary: ReasoningSummaryConfig,
@@ -373,8 +376,8 @@ pub(crate) struct SessionConfiguration {
 impl SessionConfiguration {
     pub(crate) fn apply(&self, updates: &SessionSettingsUpdate) -> Self {
         let mut next_configuration = self.clone();
-        if let Some(model) = updates.model.clone() {
-            next_configuration.model = model;
+        if let Some(model_family) = updates.model_family.clone() {
+            next_configuration.model_family = model_family;
         }
         if let Some(effort) = updates.reasoning_effort {
             next_configuration.model_reasoning_effort = effort;
@@ -400,7 +403,7 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) cwd: Option<PathBuf>,
     pub(crate) approval_policy: Option<AskForApproval>,
     pub(crate) sandbox_policy: Option<SandboxPolicy>,
-    pub(crate) model: Option<String>,
+    pub(crate) model_family: Option<ModelFamily>,
     pub(crate) reasoning_effort: Option<Option<ReasoningEffortConfig>>,
     pub(crate) reasoning_summary: Option<ReasoningSummaryConfig>,
     pub(crate) final_output_json_schema: Option<Option<Value>>,
@@ -423,20 +426,19 @@ impl Session {
         provider: ModelProviderInfo,
         session_configuration: &SessionConfiguration,
         per_turn_config: Config,
-        model_family: ModelFamily,
         conversation_id: ConversationId,
         sub_id: String,
     ) -> TurnContext {
         let otel_event_manager = otel_event_manager.clone().with_model(
-            session_configuration.model.as_str(),
-            model_family.slug.as_str(),
+            session_configuration.model_family.get_model_slug(),
+            session_configuration.model_family.get_model_slug(),
         );
 
         let per_turn_config = Arc::new(per_turn_config);
         let client = ModelClient::new(
             per_turn_config.clone(),
             auth_manager,
-            model_family.clone(),
+            session_configuration.model_family.clone(),
             otel_event_manager,
             provider,
             session_configuration.model_reasoning_effort,
@@ -446,7 +448,7 @@ impl Session {
         );
 
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
-            model_family: &model_family,
+            model_family: &session_configuration.model_family,
             features: &per_turn_config.features,
         });
 
@@ -468,7 +470,7 @@ impl Session {
             exec_policy: session_configuration.exec_policy.clone(),
             truncation_policy: TruncationPolicy::new(
                 per_turn_config.as_ref(),
-                model_family.truncation_policy,
+                session_configuration.model_family.truncation_policy,
             ),
         }
     }
@@ -484,7 +486,8 @@ impl Session {
     ) -> anyhow::Result<Arc<Self>> {
         debug!(
             "Configuring session: model={}; provider={:?}",
-            session_configuration.model, session_configuration.provider
+            session_configuration.model_family.get_model_slug(),
+            session_configuration.provider
         );
         if !session_configuration.cwd.is_absolute() {
             return Err(anyhow::anyhow!(
@@ -553,14 +556,11 @@ impl Session {
             });
         }
 
-        let model_family = models_manager
-            .construct_model_family(&session_configuration.model, &config)
-            .await;
         // todo(aibrahim): why are we passing model here while it can change?
         let otel_event_manager = OtelEventManager::new(
             conversation_id,
-            session_configuration.model.as_str(),
-            model_family.slug.as_str(),
+            session_configuration.model_family.get_model_slug(),
+            session_configuration.model_family.get_model_slug(),
             auth_manager.auth().and_then(|a| a.get_account_id()),
             auth_manager.auth().and_then(|a| a.get_account_email()),
             auth_manager.auth().map(|a| a.mode),
@@ -615,7 +615,10 @@ impl Session {
             id: INITIAL_SUBMIT_ID.to_owned(),
             msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
                 session_id: conversation_id,
-                model: session_configuration.model.clone(),
+                model: session_configuration
+                    .model_family
+                    .get_model_slug()
+                    .to_string(),
                 model_provider_id: config.model_provider_id.clone(),
                 approval_policy: session_configuration.approval_policy,
                 sandbox_policy: session_configuration.sandbox_policy.clone(),
@@ -779,18 +782,12 @@ impl Session {
         };
 
         let per_turn_config = Self::build_per_turn_config(&session_configuration);
-        let model_family = self
-            .services
-            .models_manager
-            .construct_model_family(&session_configuration.model, &per_turn_config)
-            .await;
         let mut turn_context: TurnContext = Self::make_turn_context(
             Some(Arc::clone(&self.services.auth_manager)),
             &self.services.otel_event_manager,
             session_configuration.provider.clone(),
             &session_configuration,
             per_turn_config,
-            model_family,
             self.conversation_id,
             sub_id,
         );
@@ -1485,13 +1482,22 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                 effort,
                 summary,
             } => {
+                let model_family = match model {
+                    Some(model) => Some(
+                        sess.services
+                            .models_manager
+                            .construct_model_family(model.as_str(), &config)
+                            .await,
+                    ),
+                    None => None,
+                };
                 handlers::override_turn_context(
                     &sess,
                     SessionSettingsUpdate {
                         cwd,
                         approval_policy,
                         sandbox_policy,
-                        model,
+                        model_family,
                         reasoning_effort: effort,
                         reasoning_summary: summary,
                         ..Default::default()
@@ -1500,8 +1506,14 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                 .await;
             }
             Op::UserInput { .. } | Op::UserTurn { .. } => {
-                handlers::user_input_or_turn(&sess, sub.id.clone(), sub.op, &mut previous_context)
-                    .await;
+                handlers::user_input_or_turn(
+                    &sess,
+                    &config,
+                    sub.id.clone(),
+                    sub.op,
+                    &mut previous_context,
+                )
+                .await;
             }
             Op::ExecApproval { id, decision } => {
                 handlers::exec_approval(&sess, id, decision).await;
@@ -1603,6 +1615,7 @@ mod handlers {
 
     pub async fn user_input_or_turn(
         sess: &Arc<Session>,
+        config: &Arc<Config>,
         sub_id: String,
         op: Op,
         previous_context: &mut Option<Arc<TurnContext>>,
@@ -1617,18 +1630,26 @@ mod handlers {
                 summary,
                 final_output_json_schema,
                 items,
-            } => (
-                items,
-                SessionSettingsUpdate {
-                    cwd: Some(cwd),
-                    approval_policy: Some(approval_policy),
-                    sandbox_policy: Some(sandbox_policy),
-                    model: Some(model),
-                    reasoning_effort: Some(effort),
-                    reasoning_summary: Some(summary),
-                    final_output_json_schema: Some(final_output_json_schema),
-                },
-            ),
+            } => {
+                let model_family = sess
+                    .services
+                    .models_manager
+                    .construct_model_family(model.as_str(), config)
+                    .await;
+
+                (
+                    items,
+                    SessionSettingsUpdate {
+                        cwd: Some(cwd),
+                        approval_policy: Some(approval_policy),
+                        sandbox_policy: Some(sandbox_policy),
+                        model_family: Some(model_family),
+                        reasoning_effort: Some(effort),
+                        reasoning_summary: Some(summary),
+                        final_output_json_schema: Some(final_output_json_schema),
+                    },
+                )
+            }
             Op::UserInput { items } => (items, SessionSettingsUpdate::default()),
             _ => unreachable!(),
         };
@@ -2581,9 +2602,10 @@ mod tests {
         .expect("load default test config");
         let config = Arc::new(config);
         let model = ModelsManager::default_model_offline(&config);
+        let model_family = ModelsManager::construct_model_family_offline(model.as_str(), &config);
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
-            model,
+            model_family,
             model_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
@@ -2653,9 +2675,10 @@ mod tests {
         .expect("load default test config");
         let config = Arc::new(config);
         let model = ModelsManager::default_model_offline(&config);
+        let model_family = ModelsManager::construct_model_family_offline(model.as_str(), &config);
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
-            model,
+            model_family,
             model_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
@@ -2854,9 +2877,13 @@ mod tests {
         let auth_manager =
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
         let models_manager = Arc::new(ModelsManager::new(auth_manager.clone()));
+        let model_family = ModelsManager::construct_model_family_offline(
+            ModelsManager::default_model_offline(&config).as_str(),
+            &config,
+        );
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
-            model: ModelsManager::default_model_offline(&config),
+            model_family,
             model_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
@@ -2872,7 +2899,7 @@ mod tests {
         };
         let per_turn_config = Session::build_per_turn_config(&session_configuration);
         let model_family = ModelsManager::construct_model_family_offline(
-            &session_configuration.model,
+            &session_configuration.model_family.get_model_slug(),
             &per_turn_config,
         );
         let otel_event_manager =
@@ -2900,7 +2927,6 @@ mod tests {
             session_configuration.provider.clone(),
             &session_configuration,
             per_turn_config,
-            model_family,
             conversation_id,
             "turn_id".to_string(),
         );
@@ -2938,9 +2964,13 @@ mod tests {
         let auth_manager =
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
         let models_manager = Arc::new(ModelsManager::new(auth_manager.clone()));
+        let model_family = ModelsManager::construct_model_family_offline(
+            ModelsManager::default_model_offline(&config).as_str(),
+            &config,
+        );
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
-            model: ModelsManager::default_model_offline(&config),
+            model_family,
             model_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
@@ -2956,7 +2986,7 @@ mod tests {
         };
         let per_turn_config = Session::build_per_turn_config(&session_configuration);
         let model_family = ModelsManager::construct_model_family_offline(
-            session_configuration.model.as_str(),
+            session_configuration.model_family.get_model_slug(),
             &per_turn_config,
         );
         let otel_event_manager =
@@ -2984,7 +3014,6 @@ mod tests {
             session_configuration.provider.clone(),
             &session_configuration,
             per_turn_config,
-            model_family,
             conversation_id,
             "turn_id".to_string(),
         ));
