@@ -271,12 +271,10 @@ impl App {
             auth_manager.clone(),
             SessionSource::Cli,
         ));
-        let mut model = config.model.clone().unwrap_or(
-            conversation_manager
-                .get_models_manager()
-                .default_model()
-                .await,
-        );
+        let mut model = conversation_manager
+            .get_models_manager()
+            .get_model(config.model.clone().as_deref())
+            .await;
         let exit_info = handle_model_migration_prompt_if_needed(
             tui,
             &mut config,

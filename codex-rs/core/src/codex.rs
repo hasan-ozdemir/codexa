@@ -188,10 +188,9 @@ impl Codex {
         {
             error!("failed to refresh available models: {err:?}");
         }
-        let model = match config.model.clone() {
-            Some(model) => model,
-            None => models_manager.default_model().await,
-        };
+        let model = models_manager
+            .get_model(config.model.clone().as_deref())
+            .await;
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
             model: model.clone(),
@@ -444,7 +443,6 @@ impl Session {
             session_configuration.model_reasoning_summary,
             conversation_id,
             session_configuration.session_source.clone(),
-            session_configuration.model.clone(),
         );
 
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
@@ -893,7 +891,6 @@ impl Session {
             auth_manager,
             &otel,
             self.conversation_id,
-            self.services.models_manager.clone(),
             call_id,
             command,
             failure_message,
@@ -1967,7 +1964,6 @@ async fn spawn_review_thread(
         per_turn_config.model_reasoning_summary,
         sess.conversation_id,
         parent_turn_context.client.get_session_source(),
-        parent_turn_context.client.get_model(),
     );
 
     let review_turn_context = TurnContext {

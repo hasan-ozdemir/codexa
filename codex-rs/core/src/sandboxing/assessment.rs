@@ -11,7 +11,6 @@ use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::codex::TurnContext;
 use crate::config::Config;
-use crate::openai_models::models_manager::ModelsManager;
 use crate::protocol::SandboxPolicy;
 use askama::Template;
 use codex_otel::otel_event_manager::OtelEventManager;
@@ -47,7 +46,6 @@ pub(crate) async fn assess_command(
     auth_manager: Arc<AuthManager>,
     parent_otel: &OtelEventManager,
     conversation_id: ConversationId,
-    models_manager: Arc<ModelsManager>,
     call_id: &str,
     command: &[String],
     failure_message: Option<&str>,
@@ -124,14 +122,11 @@ pub(crate) async fn assess_command(
         output_schema: Some(sandbox_assessment_schema()),
     };
 
-    let model_family = models_manager
-        .construct_model_family(&turn_context.client.get_model(), &config)
-        .await;
+    let model_family = turn_context.client.get_model_family();
 
-    let child_otel = parent_otel.with_model(
-        turn_context.client.get_model().as_str(),
-        model_family.slug.as_str(),
-    );
+    // todo(aibrahim: model is the same as slug, we should edit this function.
+    let child_otel =
+        parent_otel.with_model(model_family.get_model_slug(), model_family.slug.as_str());
 
     let client = ModelClient::new(
         Arc::clone(&config),
@@ -143,7 +138,6 @@ pub(crate) async fn assess_command(
         config.model_reasoning_summary,
         conversation_id,
         turn_context.client.get_session_source(),
-        turn_context.client.get_model(),
     );
 
     let start = Instant::now();

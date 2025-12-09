@@ -75,17 +75,13 @@ fn set_windows_sandbox_enabled(enabled: bool) {
 
 fn test_config() -> Config {
     // Use base defaults to avoid depending on host state.
-    let mut config = Config::load_from_base_config_with_overrides(
+
+    Config::load_from_base_config_with_overrides(
         ConfigToml::default(),
         ConfigOverrides::default(),
         std::env::temp_dir(),
     )
-    .expect("config");
-    if config.model.is_none() {
-        let default_model = ModelsManager::default_model_offline(&config);
-        config.model = Some(default_model);
-    }
-    config
+    .expect("config")
 }
 
 fn config_model(config: &Config) -> &str {

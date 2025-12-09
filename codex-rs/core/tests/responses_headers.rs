@@ -61,10 +61,7 @@ async fn responses_stream_includes_subagent_header_on_review() {
     config.model_provider = provider.clone();
     let effort = config.model_reasoning_effort;
     let summary = config.model_reasoning_summary;
-    let model = config
-        .model
-        .clone()
-        .unwrap_or_else(|| ModelsManager::default_model_offline(&config));
+    let model = ModelsManager::default_model_offline(&config);
     config.model = Some(model.clone());
     let config = Arc::new(config);
 
@@ -92,7 +89,6 @@ async fn responses_stream_includes_subagent_header_on_review() {
         summary,
         conversation_id,
         SessionSource::SubAgent(codex_protocol::protocol::SubAgentSource::Review),
-        model.clone(),
     );
 
     let mut prompt = Prompt::default();
@@ -157,10 +153,7 @@ async fn responses_stream_includes_subagent_header_on_other() {
     config.model_provider = provider.clone();
     let effort = config.model_reasoning_effort;
     let summary = config.model_reasoning_summary;
-    let model = config
-        .model
-        .clone()
-        .unwrap_or_else(|| ModelsManager::default_model_offline(&config));
+    let model = ModelsManager::default_model_offline(&config);
     config.model = Some(model.clone());
     let config = Arc::new(config);
 
@@ -191,7 +184,6 @@ async fn responses_stream_includes_subagent_header_on_other() {
         SessionSource::SubAgent(codex_protocol::protocol::SubAgentSource::Other(
             "my-task".to_string(),
         )),
-        model.clone(),
     );
 
     let mut prompt = Prompt::default();
@@ -285,7 +277,6 @@ async fn responses_respects_model_family_overrides_from_config() {
         SessionSource::SubAgent(codex_protocol::protocol::SubAgentSource::Other(
             "override-check".to_string(),
         )),
-        model,
     );
 
     let mut prompt = Prompt::default();

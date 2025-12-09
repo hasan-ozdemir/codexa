@@ -1,7 +1,6 @@
 #![allow(clippy::unwrap_used)]
 
 use codex_core::features::Feature;
-use codex_core::openai_models::models_manager::ModelsManager;
 use codex_core::protocol::AskForApproval;
 use codex_core::protocol::ENVIRONMENT_CONTEXT_OPEN_TAG;
 use codex_core::protocol::EventMsg;
@@ -580,7 +579,12 @@ async fn send_user_turn_with_no_changes_does_not_send_environment_context() -> a
     let req1 = mount_sse_once(&server, sse_completed("resp-1")).await;
     let req2 = mount_sse_once(&server, sse_completed("resp-2")).await;
 
-    let TestCodex { codex, config, .. } = test_codex()
+    let TestCodex {
+        codex,
+        config,
+        session_configured,
+        ..
+    } = test_codex()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
         })
@@ -590,10 +594,7 @@ async fn send_user_turn_with_no_changes_does_not_send_environment_context() -> a
     let default_cwd = config.cwd.clone();
     let default_approval_policy = config.approval_policy;
     let default_sandbox_policy = config.sandbox_policy.clone();
-    let default_model = config
-        .model
-        .clone()
-        .unwrap_or_else(|| ModelsManager::default_model_offline(&config));
+    let default_model = session_configured.model;
     let default_effort = config.model_reasoning_effort;
     let default_summary = config.model_reasoning_summary;
 
@@ -670,7 +671,12 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
 
     let req1 = mount_sse_once(&server, sse_completed("resp-1")).await;
     let req2 = mount_sse_once(&server, sse_completed("resp-2")).await;
-    let TestCodex { codex, config, .. } = test_codex()
+    let TestCodex {
+        codex,
+        config,
+        session_configured,
+        ..
+    } = test_codex()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
         })
@@ -680,10 +686,7 @@ async fn send_user_turn_with_changes_sends_environment_context() -> anyhow::Resu
     let default_cwd = config.cwd.clone();
     let default_approval_policy = config.approval_policy;
     let default_sandbox_policy = config.sandbox_policy.clone();
-    let default_model = config
-        .model
-        .clone()
-        .unwrap_or_else(|| ModelsManager::default_model_offline(&config));
+    let default_model = session_configured.model;
     let default_effort = config.model_reasoning_effort;
     let default_summary = config.model_reasoning_summary;
 

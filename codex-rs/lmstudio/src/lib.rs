@@ -13,9 +13,7 @@ pub const DEFAULT_OSS_MODEL: &str = "openai/gpt-oss-20b";
 pub async fn ensure_oss_ready(config: &Config) -> std::io::Result<()> {
     let model = match config.model.as_ref() {
         Some(model) => model,
-        None => {
-            return Err(std::io::Error::other("No model specified"));
-        }
+        None => DEFAULT_OSS_MODEL,
     };
 
     // Verify local LM Studio is reachable.

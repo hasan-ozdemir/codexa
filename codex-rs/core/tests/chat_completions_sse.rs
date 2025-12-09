@@ -97,7 +97,6 @@ async fn run_stream_with_bytes(sse_body: &[u8]) -> Vec<ResponseEvent> {
         summary,
         conversation_id,
         codex_protocol::protocol::SessionSource::Exec,
-        model,
     );
 
     let mut prompt = Prompt::default();

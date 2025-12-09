@@ -23,17 +23,12 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 fn test_config(temp_home: &TempDir) -> Config {
-    let mut config = Config::load_from_base_config_with_overrides(
+    Config::load_from_base_config_with_overrides(
         ConfigToml::default(),
         ConfigOverrides::default(),
         temp_home.path().to_path_buf(),
     )
-    .expect("load config");
-    if config.model.is_none() {
-        let default_model = ModelsManager::default_model_offline(&config);
-        config.model = Some(default_model);
-    }
-    config
+    .expect("load config")
 }
 
 fn config_model(config: &Config) -> &str {

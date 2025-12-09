@@ -21,9 +21,7 @@ pub async fn ensure_oss_ready(config: &Config) -> std::io::Result<()> {
     // Only download when the requested model is the default OSS model (or when -m is not provided).
     let model = match config.model.as_ref() {
         Some(model) => model,
-        None => {
-            return Err(std::io::Error::other("No model specified"));
-        }
+        None => DEFAULT_OSS_MODEL,
     };
 
     // Verify local Ollama is reachable.

@@ -63,7 +63,6 @@ pub struct ModelClient {
     effort: Option<ReasoningEffortConfig>,
     summary: ReasoningSummaryConfig,
     session_source: SessionSource,
-    model: String,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -78,7 +77,6 @@ impl ModelClient {
         summary: ReasoningSummaryConfig,
         conversation_id: ConversationId,
         session_source: SessionSource,
-        model: String,
     ) -> Self {
         Self {
             config,
@@ -90,7 +88,6 @@ impl ModelClient {
             effort,
             summary,
             session_source,
-            model,
         }
     }
 
@@ -295,7 +292,7 @@ impl ModelClient {
 
     /// Returns the currently configured model slug.
     pub fn get_model(&self) -> String {
-        self.model.clone()
+        self.get_model_family().get_model_slug().to_string()
     }
 
     /// Returns the currently configured model family.

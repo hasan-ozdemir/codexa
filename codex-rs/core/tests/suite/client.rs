@@ -1014,10 +1014,7 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
     config.model_provider = provider.clone();
     let effort = config.model_reasoning_effort;
     let summary = config.model_reasoning_summary;
-    let model = config
-        .model
-        .clone()
-        .unwrap_or_else(|| ModelsManager::default_model_offline(&config));
+    let model = ModelsManager::default_model_offline(&config);
     config.model = Some(model.clone());
     let config = Arc::new(config);
     let model_family = ModelsManager::construct_model_family_offline(model.as_str(), &config);
@@ -1044,7 +1041,6 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
         summary,
         conversation_id,
         codex_protocol::protocol::SessionSource::Exec,
-        model,
     );
 
     let mut prompt = Prompt::default();

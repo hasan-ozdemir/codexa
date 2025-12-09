@@ -29,6 +29,7 @@ use crate::openai_models::model_presets::builtin_model_presets;
 const MODEL_CACHE_FILE: &str = "models_cache.json";
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 const OPENAI_DEFAULT_MODEL: &str = "gpt-5.1-codex-max";
+const CODEX_AUTO_BALANCED_MODEL: &str = "codex-auto-balanced";
 
 /// Coordinates remote model discovery plus cached metadata on disk.
 #[derive(Debug)]
@@ -99,7 +100,10 @@ impl ModelsManager {
             .with_remote_overrides(self.remote_models.read().await.clone())
     }
 
-    pub async fn default_model(&self) -> String {
+    pub async fn get_model(&self, model: Option<&str>) -> String {
+        if let Some(model) = model {
+            return model.to_string();
+        }
         // if codex-auto-balanced exists & signed in with chatgpt mode, return it, otherwise return the default model
         let auth_mode = self.auth_manager.get_auth_mode();
         if auth_mode == Some(AuthMode::ChatGPT)
@@ -108,9 +112,9 @@ impl ModelsManager {
                 .read()
                 .await
                 .iter()
-                .any(|m| m.model == "codex-auto-balanced")
+                .any(|m| m.model == CODEX_AUTO_BALANCED_MODEL)
         {
-            return "codex-auto-balanced".to_string();
+            return CODEX_AUTO_BALANCED_MODEL.to_string();
         }
         OPENAI_DEFAULT_MODEL.to_string()
     }

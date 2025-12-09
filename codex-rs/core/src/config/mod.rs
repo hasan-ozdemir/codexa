@@ -1103,7 +1103,6 @@ impl Config {
 
         let forced_login_method = cfg.forced_login_method;
 
-        // todo(aibrahim): make model optional
         let model = model.or(config_profile.model).or(cfg.model);
 
         let compact_prompt = compact_prompt.or(cfg.compact_prompt).and_then(|value| {
