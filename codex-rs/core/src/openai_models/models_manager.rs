@@ -146,6 +146,7 @@ impl ModelsManager {
 
     /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
     async fn try_load_cache(&self) -> bool {
+        // todo(aibrahim): think if we should store fetched_at in ModelsManager so we don't always need to read the disk
         let cache_path = self.cache_path();
         let cache = match cache::load_cache(&cache_path).await {
             Ok(cache) => cache,
