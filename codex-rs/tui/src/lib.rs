@@ -532,8 +532,9 @@ async fn run_ratatui_app(
             }
         }
     } else if cli.resume_last {
-        let cwd_filter = if resume_picker::folder_based_sessions_enabled() {
-            cli.cwd
+        if resume_picker::folder_based_sessions_enabled() {
+            let cwd_filter = cli
+                .cwd
                 .clone()
                 .and_then(|p| p.canonicalize().ok())
                 .or_else(|| {
@@ -541,19 +542,39 @@ async fn run_ratatui_app(
                         .ok()
                         .and_then(|p| p.canonicalize().ok())
                 })
-                .or_else(|| std::env::current_dir().ok())
-        } else {
-            None
-        };
+                .or_else(|| std::env::current_dir().ok());
 
-        match latest_session_for_cwd(&config.codex_home, &config.model_provider_id, cwd_filter)
-            .await
-        {
-            Ok(Some(path)) => resume_picker::ResumeSelection::Resume(path),
-            Ok(None) => resume_picker::ResumeSelection::StartFresh,
-            Err(err) => {
-                error!("Error listing conversations: {err}");
-                resume_picker::ResumeSelection::StartFresh
+            match latest_session_for_cwd(&config.codex_home, &config.model_provider_id, cwd_filter)
+                .await
+            {
+                Ok(Some(path)) => resume_picker::ResumeSelection::Resume(path),
+                Ok(None) => resume_picker::ResumeSelection::StartFresh,
+                Err(err) => {
+                    error!("Error listing conversations: {err}");
+                    resume_picker::ResumeSelection::StartFresh
+                }
+            }
+        } else {
+            let provider_filter = vec![config.model_provider_id.clone()];
+            let page = RolloutRecorder::list_conversations(
+                &config.codex_home,
+                1,
+                None,
+                INTERACTIVE_SESSION_SOURCES,
+                Some(provider_filter.as_slice()),
+                &config.model_provider_id,
+            )
+            .await;
+            match page {
+                Ok(page) => page
+                    .items
+                    .first()
+                    .map(|it| resume_picker::ResumeSelection::Resume(it.path.clone()))
+                    .unwrap_or(resume_picker::ResumeSelection::StartFresh),
+                Err(err) => {
+                    error!("Error listing conversations: {err}");
+                    resume_picker::ResumeSelection::StartFresh
+                }
             }
         }
     } else if cli.resume_picker {
