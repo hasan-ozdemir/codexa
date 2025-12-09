@@ -123,6 +123,7 @@ fn migration_prompt_hidden(config: &Config, migration_config_key: &str) -> Optio
 async fn handle_model_migration_prompt_if_needed(
     tui: &mut tui::Tui,
     config: &mut Config,
+    model: &str,
     app_event_tx: &AppEventSender,
     auth_mode: Option<AuthMode>,
     models_manager: Arc<ModelsManager>,
@@ -130,7 +131,7 @@ async fn handle_model_migration_prompt_if_needed(
     let available_models = models_manager.list_models().await;
     let upgrade = available_models
         .iter()
-        .find(|preset| preset.model == config.model)
+        .find(|preset| preset.model == model)
         .and_then(|preset| preset.upgrade.as_ref());
 
     if let Some(ModelUpgrade {
@@ -146,7 +147,7 @@ async fn handle_model_migration_prompt_if_needed(
         let target_model = target_model.to_string();
         let hide_prompt_flag = migration_prompt_hidden(config, migration_config_key.as_str());
         if !should_show_model_migration_prompt(
-            &config.model,
+            model,
             &target_model,
             hide_prompt_flag,
             available_models.clone(),
@@ -269,6 +270,12 @@ impl App {
             auth_manager.clone(),
             SessionSource::Cli,
         ));
+        let model = config.model.clone().unwrap_or(
+            conversation_manager
+                .get_models_manager()
+                .default_model()
+                .await,
+        );
         let exit_info = handle_model_migration_prompt_if_needed(
             tui,
             &mut config,

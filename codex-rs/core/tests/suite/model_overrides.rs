@@ -20,7 +20,7 @@ async fn override_turn_context_does_not_persist_when_config_exists() {
         .expect("seed config.toml");
 
     let mut config = load_default_config_for_test(&codex_home);
-    config.model = "gpt-4o".to_string();
+    config.model = Some("gpt-4o".to_string());
 
     let conversation_manager =
         ConversationManager::with_auth(CodexAuth::from_api_key("Test API Key"));

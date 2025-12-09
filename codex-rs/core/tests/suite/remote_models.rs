@@ -82,7 +82,7 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
 
     let mut builder = test_codex().with_config(|config| {
         config.features.enable(Feature::RemoteModels);
-        config.model = "gpt-5.1".to_string();
+        config.model = Some("gpt-5.1".to_string());
     });
 
     let TestCodex {
@@ -220,7 +220,7 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
 
     let mut builder = test_codex().with_config(|config| {
         config.features.enable(Feature::RemoteModels);
-        config.model = "gpt-5.1".to_string();
+        config.model = Some("gpt-5.1".to_string());
     });
 
     let TestCodex {

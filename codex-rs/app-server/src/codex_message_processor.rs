@@ -2669,7 +2669,7 @@ impl CodexMessageProcessor {
         })?;
 
         let mut config = self.config.as_ref().clone();
-        config.model = self.config.review_model.clone();
+        config.model = Some(self.config.review_model.clone());
 
         let NewConversation {
             conversation_id,

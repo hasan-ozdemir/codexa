@@ -23,12 +23,24 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 fn test_config(temp_home: &TempDir) -> Config {
-    Config::load_from_base_config_with_overrides(
+    let mut config = Config::load_from_base_config_with_overrides(
         ConfigToml::default(),
         ConfigOverrides::default(),
         temp_home.path().to_path_buf(),
     )
-    .expect("load config")
+    .expect("load config");
+    if config.model.is_none() {
+        let default_model = ModelsManager::default_model_offline(&config);
+        config.model = Some(default_model);
+    }
+    config
+}
+
+fn config_model(config: &Config) -> &str {
+    config
+        .model
+        .as_deref()
+        .expect("tests require a configured model")
 }
 
 fn test_auth_manager(config: &Config) -> AuthManager {
@@ -40,7 +52,7 @@ fn test_auth_manager(config: &Config) -> AuthManager {
 }
 
 fn test_model_family(config: &Config) -> ModelFamily {
-    ModelsManager::construct_model_family_offline(config.model.as_str(), config)
+    ModelsManager::construct_model_family_offline(config_model(config), config)
 }
 
 fn render_lines(lines: &[Line<'static>]) -> Vec<String> {
@@ -88,7 +100,7 @@ fn reset_at_from(captured_at: &chrono::DateTime<chrono::Local>, seconds: i64) ->
 fn status_snapshot_includes_reasoning_details() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home);
-    config.model = "gpt-5.1-codex-max".to_string();
+    config.model = Some("gpt-5.1-codex-max".to_string());
     config.model_provider_id = "openai".to_string();
     config.model_reasoning_effort = Some(ReasoningEffort::High);
     config.model_reasoning_summary = ReasoningSummary::Detailed;
@@ -157,7 +169,7 @@ fn status_snapshot_includes_reasoning_details() {
 fn status_snapshot_includes_monthly_limit() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home);
-    config.model = "gpt-5.1-codex-max".to_string();
+    config.model = Some("gpt-5.1-codex-max".to_string());
     config.model_provider_id = "openai".to_string();
     config.cwd = PathBuf::from("/workspace/tests");
 
@@ -376,7 +388,7 @@ fn status_snapshot_hides_when_has_no_credits_flag() {
 fn status_card_token_usage_excludes_cached_tokens() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home);
-    config.model = "gpt-5.1-codex-max".to_string();
+    config.model = Some("gpt-5.1-codex-max".to_string());
     config.cwd = PathBuf::from("/workspace/tests");
 
     let auth_manager = test_auth_manager(&config);
@@ -417,7 +429,7 @@ fn status_card_token_usage_excludes_cached_tokens() {
 fn status_snapshot_truncates_in_narrow_terminal() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home);
-    config.model = "gpt-5.1-codex-max".to_string();
+    config.model = Some("gpt-5.1-codex-max".to_string());
     config.model_provider_id = "openai".to_string();
     config.model_reasoning_effort = Some(ReasoningEffort::High);
     config.model_reasoning_summary = ReasoningSummary::Detailed;
@@ -475,7 +487,7 @@ fn status_snapshot_truncates_in_narrow_terminal() {
 fn status_snapshot_shows_missing_limits_message() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home);
-    config.model = "gpt-5.1-codex-max".to_string();
+    config.model = Some("gpt-5.1-codex-max".to_string());
     config.cwd = PathBuf::from("/workspace/tests");
 
     let auth_manager = test_auth_manager(&config);
@@ -518,7 +530,7 @@ fn status_snapshot_shows_missing_limits_message() {
 fn status_snapshot_includes_credits_and_limits() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home);
-    config.model = "gpt-5.1-codex".to_string();
+    config.model = Some("gpt-5.1-codex".to_string());
     config.cwd = PathBuf::from("/workspace/tests");
 
     let auth_manager = test_auth_manager(&config);
@@ -580,7 +592,7 @@ fn status_snapshot_includes_credits_and_limits() {
 fn status_snapshot_shows_empty_limits_message() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home);
-    config.model = "gpt-5.1-codex-max".to_string();
+    config.model = Some("gpt-5.1-codex-max".to_string());
     config.cwd = PathBuf::from("/workspace/tests");
 
     let auth_manager = test_auth_manager(&config);
@@ -630,7 +642,7 @@ fn status_snapshot_shows_empty_limits_message() {
 fn status_snapshot_shows_stale_limits_message() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home);
-    config.model = "gpt-5.1-codex-max".to_string();
+    config.model = Some("gpt-5.1-codex-max".to_string());
     config.cwd = PathBuf::from("/workspace/tests");
 
     let auth_manager = test_auth_manager(&config);
@@ -689,7 +701,7 @@ fn status_snapshot_shows_stale_limits_message() {
 fn status_snapshot_cached_limits_hide_credits_without_flag() {
     let temp_home = TempDir::new().expect("temp home");
     let mut config = test_config(&temp_home);
-    config.model = "gpt-5.1-codex".to_string();
+    config.model = Some("gpt-5.1-codex".to_string());
     config.cwd = PathBuf::from("/workspace/tests");
 
     let auth_manager = test_auth_manager(&config);

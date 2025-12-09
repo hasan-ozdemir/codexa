@@ -71,10 +71,11 @@ async fn run_request(input: Vec<ResponseItem>) -> Value {
     let config = Arc::new(config);
 
     let conversation_id = ConversationId::new();
-    let model_family = ModelsManager::construct_model_family_offline(&config.model, &config);
+    let model = ModelsManager::default_model_offline(&config);
+    let model_family = ModelsManager::construct_model_family_offline(model.as_str(), &config);
     let otel_event_manager = OtelEventManager::new(
         conversation_id,
-        config.model.as_str(),
+        model.as_str(),
         model_family.slug.as_str(),
         None,
         Some("test@test.com".to_string()),
@@ -93,6 +94,7 @@ async fn run_request(input: Vec<ResponseItem>) -> Value {
         summary,
         conversation_id,
         codex_protocol::protocol::SessionSource::Exec,
+        model,
     );
 
     let mut prompt = Prompt::default();

@@ -870,7 +870,7 @@ async fn start_test_conversation(
     config.model_provider = model_provider;
     config.compact_prompt = Some(SUMMARIZATION_PROMPT.to_string());
     if let Some(model) = model {
-        config.model = model.to_string();
+        config.model = Some(model.to_string());
     }
     let manager = ConversationManager::with_auth(CodexAuth::from_api_key("dummy"));
     let NewConversation { conversation, .. } = manager

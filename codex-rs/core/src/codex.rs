@@ -2584,9 +2584,10 @@ mod tests {
         )
         .expect("load default test config");
         let config = Arc::new(config);
+        let model = ModelsManager::default_model_offline(&config);
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
-            model: config.model.clone(),
+            model,
             model_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
@@ -2655,9 +2656,10 @@ mod tests {
         )
         .expect("load default test config");
         let config = Arc::new(config);
+        let model = ModelsManager::default_model_offline(&config);
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
-            model: config.model.clone(),
+            model,
             model_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
@@ -2832,7 +2834,7 @@ mod tests {
     ) -> OtelEventManager {
         OtelEventManager::new(
             conversation_id,
-            config.model.as_str(),
+            ModelsManager::default_model_offline(config).as_str(),
             model_family.slug.as_str(),
             None,
             Some("test@test.com".to_string()),
@@ -2858,7 +2860,7 @@ mod tests {
         let models_manager = Arc::new(ModelsManager::new(auth_manager.clone()));
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
-            model: config.model.clone(),
+            model: ModelsManager::default_model_offline(&config),
             model_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
@@ -2873,8 +2875,10 @@ mod tests {
             session_source: SessionSource::Exec,
         };
         let per_turn_config = Session::build_per_turn_config(&session_configuration);
-        let model_family =
-            ModelsManager::construct_model_family_offline(&per_turn_config.model, &per_turn_config);
+        let model_family = ModelsManager::construct_model_family_offline(
+            &session_configuration.model,
+            &per_turn_config,
+        );
         let otel_event_manager =
             otel_event_manager(conversation_id, config.as_ref(), &model_family);
 
@@ -2940,7 +2944,7 @@ mod tests {
         let models_manager = Arc::new(ModelsManager::new(auth_manager.clone()));
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
-            model: config.model.clone(),
+            model: ModelsManager::default_model_offline(&config),
             model_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
@@ -2955,8 +2959,10 @@ mod tests {
             session_source: SessionSource::Exec,
         };
         let per_turn_config = Session::build_per_turn_config(&session_configuration);
-        let model_family =
-            ModelsManager::construct_model_family_offline(&per_turn_config.model, &per_turn_config);
+        let model_family = ModelsManager::construct_model_family_offline(
+            &session_configuration.model.as_str(),
+            &per_turn_config,
+        );
         let otel_event_manager =
             otel_event_manager(conversation_id, config.as_ref(), &model_family);
 

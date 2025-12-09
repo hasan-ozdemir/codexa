@@ -2927,7 +2927,7 @@ model_verbosity = "high"
         )?;
         assert_eq!(
             Config {
-                model: "o3".to_string(),
+                model: Some("o3".to_string()),
                 review_model: OPENAI_DEFAULT_REVIEW_MODEL.to_string(),
                 model_context_window: None,
                 model_auto_compact_token_limit: None,
@@ -3002,7 +3002,7 @@ model_verbosity = "high"
             fixture.codex_home(),
         )?;
         let expected_gpt3_profile_config = Config {
-            model: "gpt-3.5-turbo".to_string(),
+            model: Some("gpt-3.5-turbo".to_string()),
             review_model: OPENAI_DEFAULT_REVIEW_MODEL.to_string(),
             model_context_window: None,
             model_auto_compact_token_limit: None,
@@ -3092,7 +3092,7 @@ model_verbosity = "high"
             fixture.codex_home(),
         )?;
         let expected_zdr_profile_config = Config {
-            model: "o3".to_string(),
+            model: Some("o3".to_string()),
             review_model: OPENAI_DEFAULT_REVIEW_MODEL.to_string(),
             model_context_window: None,
             model_auto_compact_token_limit: None,
@@ -3168,7 +3168,7 @@ model_verbosity = "high"
             fixture.codex_home(),
         )?;
         let expected_gpt5_profile_config = Config {
-            model: "gpt-5.1".to_string(),
+            model: Some("gpt-5.1".to_string()),
             review_model: OPENAI_DEFAULT_REVIEW_MODEL.to_string(),
             model_context_window: None,
             model_auto_compact_token_limit: None,

@@ -116,6 +116,14 @@ impl ModelsManager {
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    pub fn default_model_offline(config: &Config) -> String {
+        config
+            .model
+            .clone()
+            .unwrap_or(OPENAI_DEFAULT_MODEL.to_string())
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     /// Offline helper that builds a `ModelFamily` without consulting remote state.
     pub fn construct_model_family_offline(model: &str, config: &Config) -> ModelFamily {
         find_family_for_model(model).with_config_overrides(config)

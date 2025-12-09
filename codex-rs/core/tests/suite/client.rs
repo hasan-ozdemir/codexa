@@ -1014,13 +1014,18 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
     config.model_provider = provider.clone();
     let effort = config.model_reasoning_effort;
     let summary = config.model_reasoning_summary;
+    let model = config
+        .model
+        .clone()
+        .unwrap_or_else(|| ModelsManager::default_model_offline(&config));
+    config.model = Some(model.clone());
     let config = Arc::new(config);
-    let model_family = ModelsManager::construct_model_family_offline(&config.model, &config);
+    let model_family = ModelsManager::construct_model_family_offline(model.as_str(), &config);
     let conversation_id = ConversationId::new();
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
     let otel_event_manager = OtelEventManager::new(
         conversation_id,
-        config.model.as_str(),
+        model.as_str(),
         model_family.slug.as_str(),
         None,
         Some("test@test.com".to_string()),
@@ -1039,6 +1044,7 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
         summary,
         conversation_id,
         codex_protocol::protocol::SessionSource::Exec,
+        model,
     );
 
     let mut prompt = Prompt::default();
@@ -1381,7 +1387,7 @@ async fn context_window_error_sets_total_tokens_to_model_window() -> anyhow::Res
 
     let TestCodex { codex, .. } = test_codex()
         .with_config(|config| {
-            config.model = "gpt-5.1".to_string();
+            config.model = Some("gpt-5.1".to_string());
             config.model_context_window = Some(272_000);
         })
         .build(&server)
