@@ -46,10 +46,7 @@ pub struct ModelsManager {
 
 impl ModelsManager {
     /// Construct a manager scoped to the provided `AuthManager`.
-    pub fn new(
-        auth_manager: Arc<AuthManager>,
-        provider_override: Option<ModelProviderInfo>,
-    ) -> Self {
+    pub fn new(auth_manager: Arc<AuthManager>) -> Self {
         let codex_home = auth_manager.codex_home().to_path_buf();
         Self {
             available_models: RwLock::new(builtin_model_presets(auth_manager.get_auth_mode())),
@@ -58,7 +55,22 @@ impl ModelsManager {
             etag: RwLock::new(None),
             codex_home,
             cache_ttl: DEFAULT_MODEL_CACHE_TTL,
-            provider: provider_override.or_else(|| ModelProviderInfo::get_chatgpt_provider().ok()),
+            provider: ModelProviderInfo::get_chatgpt_provider().ok(),
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    /// Construct a manager scoped to the provided `AuthManager` with a specific provider. Used for integration tests.
+    pub fn with_provider(auth_manager: Arc<AuthManager>, provider: ModelProviderInfo) -> Self {
+        let codex_home = auth_manager.codex_home().to_path_buf();
+        Self {
+            available_models: RwLock::new(builtin_model_presets(auth_manager.get_auth_mode())),
+            remote_models: RwLock::new(Vec::new()),
+            auth_manager,
+            etag: RwLock::new(None),
+            codex_home,
+            cache_ttl: DEFAULT_MODEL_CACHE_TTL,
+            provider: Some(provider),
         }
     }
 
@@ -300,7 +312,7 @@ mod tests {
         let auth_manager =
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
         let provider = provider_for(server.uri());
-        let manager = ModelsManager::new(auth_manager, Some(provider));
+        let manager = ModelsManager::with_provider(auth_manager, provider);
 
         manager
             .refresh_available_models()
@@ -345,7 +357,7 @@ mod tests {
             AuthCredentialsStoreMode::File,
         ));
         let provider = provider_for(server.uri());
-        let manager = ModelsManager::new(auth_manager, Some(provider));
+        let manager = ModelsManager::with_provider(auth_manager, provider);
 
         manager
             .refresh_available_models()
@@ -394,7 +406,7 @@ mod tests {
             AuthCredentialsStoreMode::File,
         ));
         let provider = provider_for(server.uri());
-        let manager = ModelsManager::new(auth_manager, Some(provider));
+        let manager = ModelsManager::with_provider(auth_manager, provider);
 
         manager
             .refresh_available_models()

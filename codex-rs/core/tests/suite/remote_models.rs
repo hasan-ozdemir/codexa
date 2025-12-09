@@ -322,10 +322,7 @@ where
 
     mutate_config(&mut config);
 
-    let conversation_manager = Arc::new(ConversationManager::with_models_provider(
-        auth,
-        Some(provider),
-    ));
+    let conversation_manager = Arc::new(ConversationManager::with_models_provider(auth, provider));
 
     let new_conversation = conversation_manager
         .new_conversation(config.clone())
