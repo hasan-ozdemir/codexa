@@ -11,6 +11,7 @@ use codex_common::oss::ensure_oss_provider_ready;
 use codex_common::oss::get_default_model_for_oss_provider;
 use codex_core::AuthManager;
 use codex_core::CodexAuth;
+use codex_core::ConversationItem;
 use codex_core::INTERACTIVE_SESSION_SOURCES;
 use codex_core::RolloutRecorder;
 use codex_core::auth::enforce_login_restrictions;
@@ -23,6 +24,7 @@ use codex_core::find_conversation_path_by_id_str;
 use codex_core::get_platform_sandbox;
 use codex_core::protocol::AskForApproval;
 use codex_protocol::config_types::SandboxMode;
+use codex_protocol::protocol::SessionMetaLine;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use std::fs::OpenOptions;
 use std::path::PathBuf;
@@ -31,6 +33,20 @@ use tracing_appender::non_blocking;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::filter::Targets;
 use tracing_subscriber::prelude::*;
+
+fn session_cwd(item: &ConversationItem) -> Option<std::path::PathBuf> {
+    item.head
+        .iter()
+        .find_map(|value| serde_json::from_value::<SessionMetaLine>(value.clone()).ok())
+        .map(|m| m.meta.cwd)
+}
+
+fn paths_match(a: &std::path::Path, b: &std::path::Path) -> bool {
+    if let (Ok(ca), Ok(cb)) = (a.canonicalize(), b.canonicalize()) {
+        return ca == cb;
+    }
+    a == b
+}
 
 mod additional_dirs;
 mod app;
@@ -454,7 +470,7 @@ async fn run_ratatui_app(
         }
     } else if cli.resume_last {
         let provider_filter = vec![config.model_provider_id.clone()];
-        match RolloutRecorder::list_conversations(
+        let page = RolloutRecorder::list_conversations(
             &config.codex_home,
             1,
             None,
@@ -462,14 +478,29 @@ async fn run_ratatui_app(
             Some(provider_filter.as_slice()),
             &config.model_provider_id,
         )
-        .await
-        {
-            Ok(page) => page
-                .items
-                .first()
-                .map(|it| resume_picker::ResumeSelection::Resume(it.path.clone()))
-                .unwrap_or(resume_picker::ResumeSelection::StartFresh),
-            Err(_) => resume_picker::ResumeSelection::StartFresh,
+        .await;
+        match page {
+            Ok(page) => {
+                let cwd_filter = if resume_picker::folder_based_sessions_enabled() {
+                    cli.cwd.clone().or_else(|| std::env::current_dir().ok())
+                } else {
+                    None
+                };
+                let matched = page.items.iter().find(|it| {
+                    if let Some(ref cwd) = cwd_filter {
+                        session_cwd(it).is_some_and(|p| paths_match(&p, cwd))
+                    } else {
+                        true
+                    }
+                });
+                matched
+                    .map(|it| resume_picker::ResumeSelection::Resume(it.path.clone()))
+                    .unwrap_or(resume_picker::ResumeSelection::StartFresh)
+            }
+            Err(err) => {
+                error!("Error listing conversations: {err}");
+                resume_picker::ResumeSelection::StartFresh
+            }
         }
     } else if cli.resume_picker {
         match resume_picker::run_resume_picker(

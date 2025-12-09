@@ -1,4 +1,6 @@
 use std::collections::HashSet;
+use std::fs;
+use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -77,11 +79,15 @@ pub async fn run_resume_picker(
     let (bg_tx, bg_rx) = mpsc::unbounded_channel();
 
     let default_provider = default_provider.to_string();
-    let filter_cwd = if show_all {
+    let filter_cwd = if show_all || !folder_based_sessions_enabled() {
         None
     } else {
         std::env::current_dir().ok()
     };
+
+    if folder_based_sessions_enabled() {
+        tokio::spawn(build_session_index(codex_home.to_path_buf()));
+    }
 
     let loader_tx = bg_tx.clone();
     let page_loader: PageLoader = Arc::new(move |request: PageLoadRequest| {
@@ -680,6 +686,78 @@ fn parse_timestamp_str(ts: &str) -> Option<DateTime<Utc>> {
     chrono::DateTime::parse_from_rfc3339(ts)
         .map(|dt| dt.with_timezone(&Utc))
         .ok()
+}
+
+pub fn folder_based_sessions_enabled() -> bool {
+    let env_keys = ["FOLDER_BASED_SESSIONS", "folder_based_sessions"];
+    for key in env_keys {
+        if let Ok(val) = std::env::var(key) {
+            return !matches!(val.to_lowercase().as_str(), "0" | "false" | "no");
+        }
+    }
+    read_config_bool("folder_based_sessions", true)
+}
+
+fn read_config_bool(key: &str, default_val: bool) -> bool {
+    let path = dirs::home_dir()
+        .map(|h| h.join(".codex").join("config.toml"))
+        .unwrap_or_else(|| PathBuf::from(".codex").join("config.toml"));
+    let Ok(raw) = fs::read_to_string(path) else {
+        return default_val;
+    };
+    let Ok(val) = raw.parse::<toml::Value>() else {
+        return default_val;
+    };
+    val.get(key)
+        .and_then(toml::Value::as_bool)
+        .unwrap_or(default_val)
+}
+
+fn extract_session_id_from_head(head: &[serde_json::Value]) -> Option<String> {
+    head.iter()
+        .find_map(|value| serde_json::from_value::<SessionMetaLine>(value.clone()).ok())
+        .map(|m| m.meta.id.to_string())
+}
+
+async fn build_session_index(codex_home: PathBuf) {
+    let mut cursor: Option<Cursor> = None;
+    let mut lines: Vec<String> = Vec::new();
+    loop {
+        let page = RolloutRecorder::list_conversations(
+            &codex_home,
+            500,
+            cursor.as_ref(),
+            INTERACTIVE_SESSION_SOURCES,
+            None,
+            "",
+        )
+        .await;
+        let Ok(page) = page else { break };
+        for item in page.items {
+            if let (Some(id), Some(cwd)) = (
+                extract_session_id_from_head(&item.head),
+                extract_session_meta_from_head(&item.head).0,
+            ) {
+                let path = item.path.to_string_lossy().to_string();
+                let cwd_str = cwd.to_string_lossy().to_string();
+                lines.push(serde_json::json!({"id": id, "path": path, "cwd": cwd_str}).to_string());
+            }
+        }
+        cursor = page.next_cursor;
+        if cursor.is_none() {
+            break;
+        }
+    }
+
+    let history_dir = codex_home.join("history");
+    let index_path = history_dir.join("session_index.jsonl");
+    if fs::create_dir_all(&history_dir).is_ok()
+        && let Ok(mut file) = fs::File::create(index_path)
+    {
+        for line in lines {
+            let _ = writeln!(file, "{line}");
+        }
+    }
 }
 
 fn extract_timestamp(value: &serde_json::Value) -> Option<DateTime<Utc>> {

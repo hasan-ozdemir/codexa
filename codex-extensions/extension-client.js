@@ -37,15 +37,35 @@ function log(msg) {
   }
 }
 
+function pushEnvExtensionDirs(list) {
+  const envDir = process.env.CODEX_TUI_EXTENSION_DIR;
+  if (!envDir) return;
+  list.push(envDir);
+  const leaf = path.basename(envDir).toLowerCase();
+  if (leaf === "extensions") {
+    const parent = path.dirname(envDir);
+    if (parent && parent !== envDir) {
+      list.push(parent);
+    }
+  } else {
+    list.push(path.join(envDir, "extensions"));
+  }
+}
+
 function discoverScripts() {
   const candidates = [];
 
   const isPackaged =
     __dirname.toLowerCase().includes(`${path.sep}node_modules${path.sep}`);
 
-  if (process.env.CODEX_TUI_EXTENSION_DIR) {
-    candidates.push(process.env.CODEX_TUI_EXTENSION_DIR);
+  pushEnvExtensionDirs(candidates);
+
+  // Prefer the directory where this client script lives (npm package extensions dir)
+  const scriptDir = __dirname;
+  if (scriptDir) {
+    candidates.push(path.join(scriptDir, "extensions"));
   }
+
   if (!isPackaged) {
     const exe = process.execPath;
     const exeAncestors = [];
@@ -58,23 +78,9 @@ function discoverScripts() {
       candidates.push(path.join(dir, "codex-extensions", "extensions"));
       candidates.push(path.join(dir, "extensions"));
     }
-  }
 
-  // Prefer the directory where this client script lives (npm package extensions dir)
-  const scriptDir = __dirname;
-  if (scriptDir) {
-    candidates.push(path.join(scriptDir, "extensions"));
-  }
-
-  if (!isPackaged) {
     candidates.push(path.join(process.cwd(), "codex-extensions", "extensions"));
     candidates.push(path.join(process.cwd(), "extensions"));
-  }
-
-  // In packaged installs prefer only the dir where this script lives.
-  if (isPackaged) {
-    candidates.length = 0;
-    candidates.push(path.join(__dirname, "extensions"));
   }
 
   log(

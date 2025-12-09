@@ -437,7 +437,9 @@ impl ExtensionHost {
                     return;
                 }
                 let payload = json!({ "event": "line_added" });
-                if let Some(bridge) = bridge && let Ok(mut guard) = bridge.lock() {
+                if let Some(bridge) = bridge
+                    && let Ok(mut guard) = bridge.lock()
+                {
                     let _ = guard.send_request("notify", payload, &log_path);
                 }
             });
@@ -447,7 +449,9 @@ impl ExtensionHost {
             let event_string = event.to_string();
             std::thread::spawn(move || {
                 let payload = json!({ "event": event_string });
-                if let Some(bridge) = bridge && let Ok(mut guard) = bridge.lock() {
+                if let Some(bridge) = bridge
+                    && let Ok(mut guard) = bridge.lock()
+                {
                     let _ = guard.send_request("notify", payload, &log_path);
                 }
             });
@@ -754,11 +758,52 @@ impl ExtensionHost {
             .map(str::to_string)
     }
 
-    fn discover_scripts() -> Vec<PathBuf> {
-        let mut candidates: Vec<PathBuf> = Vec::new();
+    fn is_extensions_dir(path: &Path) -> bool {
+        path.file_name()
+            .and_then(|s| s.to_str())
+            .map(|n| n.eq_ignore_ascii_case("extensions"))
+            .unwrap_or(false)
+    }
+
+    /// Derive candidate extension script directories from CODEX_TUI_EXTENSION_DIR.
+    /// If the env var already points to the `extensions` leaf, return that. If it
+    /// points to the parent (codex-extensions), also probe its `extensions` child.
+    fn env_extension_script_dirs() -> Vec<PathBuf> {
         if let Ok(dir) = env::var("CODEX_TUI_EXTENSION_DIR") {
-            candidates.push(PathBuf::from(dir));
+            let path = PathBuf::from(dir);
+            if Self::is_extensions_dir(&path) {
+                vec![path]
+            } else {
+                vec![path.join("extensions"), path]
+            }
+        } else {
+            Vec::new()
         }
+    }
+
+    /// Derive candidate roots that may contain `extension-client.js` based on the
+    /// CODEX_TUI_EXTENSION_DIR environment variable. Accept both the extensions
+    /// directory itself and its parent so users can point the env var at either.
+    fn env_extension_root_dirs() -> Vec<PathBuf> {
+        if let Ok(dir) = env::var("CODEX_TUI_EXTENSION_DIR") {
+            let path = PathBuf::from(dir);
+            if Self::is_extensions_dir(&path) {
+                let mut out = Vec::new();
+                if let Some(parent) = path.parent() {
+                    out.push(parent.to_path_buf());
+                }
+                out.push(path);
+                out
+            } else {
+                vec![path.clone(), path.join("extensions")]
+            }
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn discover_scripts() -> Vec<PathBuf> {
+        let mut candidates: Vec<PathBuf> = Self::env_extension_script_dirs();
 
         let mut is_packaged = false;
         if let Ok(exe) = env::current_exe() {
@@ -812,10 +857,7 @@ impl ExtensionHost {
     }
 
     fn extension_client_script() -> Option<PathBuf> {
-        let mut candidates: Vec<PathBuf> = Vec::new();
-        if let Ok(dir) = env::var("CODEX_TUI_EXTENSION_DIR") {
-            candidates.push(PathBuf::from(dir));
-        }
+        let mut candidates: Vec<PathBuf> = Self::env_extension_root_dirs();
         if let Ok(exe) = env::current_exe() {
             for ancestor in exe.ancestors() {
                 candidates.push(ancestor.join("codex-extensions"));
@@ -830,8 +872,10 @@ impl ExtensionHost {
             candidates.push(cwd.join("codex-extensions"));
             candidates.push(cwd.join("extensions"));
         }
-        // NPM global default on Windows: %APPDATA%\npm\node_modules\@openai\codex\extensions
-        if cfg!(windows) && let Some(home) = dirs::home_dir() {
+        // NPM global default on Windows: %APPDATA%\npm\node_modules\@openai\codex\codex-extensions
+        if cfg!(windows)
+            && let Some(home) = dirs::home_dir()
+        {
             let npm_ext = home
                 .join("AppData")
                 .join("Roaming")
@@ -1121,7 +1165,9 @@ impl ExtensionHost {
         ));
         *self.session_path.borrow_mut() = Some(seed.path.clone());
         let payload = json!({ "payload": { "entries": seed.entries, "session_path": seed.path } });
-        if let Some(bridge) = &self.bridge && let Ok(mut guard) = bridge.lock() {
+        if let Some(bridge) = &self.bridge
+            && let Ok(mut guard) = bridge.lock()
+        {
             let _ = guard.send_request("history_seed", payload.clone(), &self.log_path);
         }
         for script in &self.scripts {
