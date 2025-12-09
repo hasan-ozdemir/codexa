@@ -111,7 +111,7 @@ impl StatusHistoryCell {
         now: DateTime<Local>,
         model_name: &str,
     ) -> Self {
-        let config_entries = create_config_summary_entries(config);
+        let config_entries = create_config_summary_entries(config, model_name);
         let (model_name, model_details) = compose_model_display(model_name, &config_entries);
         let approval = config_entries
             .iter()
