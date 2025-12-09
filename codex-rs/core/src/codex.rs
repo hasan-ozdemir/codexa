@@ -182,7 +182,7 @@ impl Codex {
 
         let config = Arc::new(config);
         if config.features.enabled(Feature::RemoteModels)
-            && let Err(err) = models_manager.refresh_available_models().await
+            && let Err(err) = models_manager.refresh_available_models(None).await
         {
             error!("failed to refresh available models: {err:?}");
         }

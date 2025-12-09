@@ -59,15 +59,19 @@ impl ModelsManager {
     }
 
     /// Fetch the latest remote models, using the on-disk cache when still fresh.
-    pub async fn refresh_available_models(&self) -> CoreResult<()> {
+    pub async fn refresh_available_models(
+        &self,
+        provider_override: Option<&ModelProviderInfo>,
+    ) -> CoreResult<()> {
         if self.try_load_cache().await {
             return Ok(());
         }
 
-        let provider = self.get_chatgpt_provider()?;
+        let main_provider = self.get_chatgpt_provider()?;
+        let provider = provider_override.unwrap_or(&main_provider);
         let auth = self.auth_manager.auth();
         let api_provider = provider.to_api_provider(Some(AuthMode::ChatGPT))?;
-        let api_auth = auth_provider_from_auth(auth.clone(), &provider).await?;
+        let api_auth = auth_provider_from_auth(auth.clone(), provider).await?;
         let transport = ReqwestTransport::new(build_reqwest_client());
         let client = ModelsClient::new(transport, api_provider, api_auth);
 
@@ -86,7 +90,7 @@ impl ModelsManager {
     }
 
     pub async fn list_models(&self) -> Vec<ModelPreset> {
-        if let Err(err) = self.refresh_available_models().await {
+        if let Err(err) = self.refresh_available_models(None).await {
             error!("failed to refresh available models: {err}");
         }
         self.available_models.read().await.clone()
@@ -109,7 +113,7 @@ impl ModelsManager {
         if let Some(model) = model {
             return model.to_string();
         }
-        if let Err(err) = self.refresh_available_models().await {
+        if let Err(err) = self.refresh_available_models(None).await {
             error!("failed to refresh available models: {err}");
         }
         // if codex-auto-balanced exists & signed in with chatgpt mode, return it, otherwise return the default model
@@ -244,6 +248,7 @@ mod tests {
     use super::*;
     use crate::CodexAuth;
     use crate::auth::AuthCredentialsStoreMode;
+    use crate::model_provider_info::WireApi;
     use codex_protocol::openai_models::ModelsResponse;
     use core_test_support::responses::mount_models_once;
     use serde_json::json;
@@ -268,6 +273,24 @@ mod tests {
         .expect("valid model")
     }
 
+    fn provider_for(base_url: String) -> ModelProviderInfo {
+        ModelProviderInfo {
+            name: "mock".into(),
+            base_url: Some(base_url),
+            env_key: None,
+            env_key_instructions: None,
+            experimental_bearer_token: None,
+            wire_api: WireApi::Responses,
+            query_params: None,
+            http_headers: None,
+            env_http_headers: None,
+            request_max_retries: Some(0),
+            stream_max_retries: Some(0),
+            stream_idle_timeout_ms: Some(5_000),
+            requires_openai_auth: false,
+        }
+    }
+
     #[tokio::test]
     async fn refresh_available_models_sorts_and_marks_default() {
         let server = MockServer::start().await;
@@ -287,9 +310,10 @@ mod tests {
         let auth_manager =
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
         let manager = ModelsManager::new(auth_manager);
+        let provider = provider_for(server.uri());
 
         manager
-            .refresh_available_models()
+            .refresh_available_models(Some(&provider))
             .await
             .expect("refresh succeeds");
         let cached_remote = manager.remote_models.read().await.clone();
@@ -331,9 +355,10 @@ mod tests {
             AuthCredentialsStoreMode::File,
         ));
         let manager = ModelsManager::new(auth_manager);
+        let provider = provider_for(server.uri());
 
         manager
-            .refresh_available_models()
+            .refresh_available_models(Some(&provider))
             .await
             .expect("first refresh succeeds");
         assert_eq!(
@@ -344,7 +369,7 @@ mod tests {
 
         // Second call should read from cache and avoid the network.
         manager
-            .refresh_available_models()
+            .refresh_available_models(Some(&provider))
             .await
             .expect("cached refresh succeeds");
         assert_eq!(
@@ -379,9 +404,10 @@ mod tests {
             AuthCredentialsStoreMode::File,
         ));
         let manager = ModelsManager::new(auth_manager);
+        let provider = provider_for(server.uri());
 
         manager
-            .refresh_available_models()
+            .refresh_available_models(Some(&provider))
             .await
             .expect("initial refresh succeeds");
 
@@ -407,7 +433,7 @@ mod tests {
         .await;
 
         manager
-            .refresh_available_models()
+            .refresh_available_models(Some(&provider))
             .await
             .expect("second refresh succeeds");
         assert_eq!(
