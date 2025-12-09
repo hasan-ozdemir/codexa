@@ -15,6 +15,7 @@ use codex_otel::otel_event_manager::OtelEventManager;
 use codex_protocol::ConversationId;
 use codex_protocol::models::ReasoningItemContent;
 use core_test_support::load_default_config_for_test;
+use core_test_support::responses::get_responses_requests;
 use core_test_support::skip_if_no_network;
 use futures::StreamExt;
 use serde_json::Value;
@@ -109,11 +110,11 @@ async fn run_request(input: Vec<ResponseItem>) -> Value {
         }
     }
 
-    let requests = match server.received_requests().await {
-        Some(reqs) => reqs,
-        None => panic!("request not made"),
-    };
-    match requests[0].body_json() {
+    let requests = get_responses_requests(&server).await;
+    let request = requests
+        .first()
+        .unwrap_or_else(|| panic!("expected POST request to /responses"));
+    match request.body_json() {
         Ok(v) => v,
         Err(e) => panic!("invalid json body: {e}"),
     }

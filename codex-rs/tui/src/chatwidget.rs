@@ -263,7 +263,6 @@ pub(crate) struct ChatWidgetInit {
     pub(crate) skills: Option<Vec<SkillMetadata>>,
     pub(crate) is_first_run: bool,
     pub(crate) model_family: ModelFamily,
-    pub(crate) resolved_model: String,
 }
 
 #[derive(Default)]
@@ -281,7 +280,6 @@ pub(crate) struct ChatWidget {
     active_cell: Option<Box<dyn HistoryCell>>,
     config: Config,
     model_family: ModelFamily,
-    model: String,
     auth_manager: Arc<AuthManager>,
     models_manager: Arc<ModelsManager>,
     session_header: SessionHeader,

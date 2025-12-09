@@ -22,8 +22,10 @@ async fn override_turn_context_does_not_persist_when_config_exists() {
     let mut config = load_default_config_for_test(&codex_home);
     config.model = Some("gpt-4o".to_string());
 
-    let conversation_manager =
-        ConversationManager::with_auth(CodexAuth::from_api_key("Test API Key"));
+    let conversation_manager = ConversationManager::with_models_provider(
+        CodexAuth::from_api_key("Test API Key"),
+        config.model_provider.clone(),
+    );
     let codex = conversation_manager
         .new_conversation(config)
         .await
@@ -62,8 +64,10 @@ async fn override_turn_context_does_not_create_config_file() {
 
     let config = load_default_config_for_test(&codex_home);
 
-    let conversation_manager =
-        ConversationManager::with_auth(CodexAuth::from_api_key("Test API Key"));
+    let conversation_manager = ConversationManager::with_models_provider(
+        CodexAuth::from_api_key("Test API Key"),
+        config.model_provider.clone(),
+    );
     let codex = conversation_manager
         .new_conversation(config)
         .await

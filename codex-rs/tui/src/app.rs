@@ -1186,9 +1186,10 @@ mod tests {
         let (chat_widget, app_event_tx, _rx, _op_rx) = make_chatwidget_manual_with_sender();
         let config = chat_widget.config_ref().clone();
         let current_model = chat_widget.model_slug().to_string();
-        let server = Arc::new(ConversationManager::with_auth(CodexAuth::from_api_key(
-            "Test API Key",
-        )));
+        let server = Arc::new(ConversationManager::with_models_provider(
+            CodexAuth::from_api_key("Test API Key"),
+            config.model_provider.clone(),
+        ));
         let auth_manager =
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
         let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
@@ -1225,9 +1226,10 @@ mod tests {
         let (chat_widget, app_event_tx, rx, op_rx) = make_chatwidget_manual_with_sender();
         let config = chat_widget.config_ref().clone();
         let current_model = chat_widget.model_slug().to_string();
-        let server = Arc::new(ConversationManager::with_auth(CodexAuth::from_api_key(
-            "Test API Key",
-        )));
+        let server = Arc::new(ConversationManager::with_models_provider(
+            CodexAuth::from_api_key("Test API Key"),
+            config.model_provider.clone(),
+        ));
         let auth_manager =
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
         let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());

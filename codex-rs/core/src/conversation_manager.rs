@@ -56,23 +56,13 @@ impl ConversationManager {
     #[cfg(any(test, feature = "test-support"))]
     /// Construct with a dummy AuthManager containing the provided CodexAuth.
     /// Used for integration tests: should not be used by ordinary business logic.
-    pub fn with_auth(auth: CodexAuth) -> Self {
-        Self::new(
-            crate::AuthManager::from_auth_for_testing(auth),
-            SessionSource::Exec,
-        )
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
     pub fn with_models_provider(auth: CodexAuth, provider: ModelProviderInfo) -> Self {
+        let auth_manager = crate::AuthManager::from_auth_for_testing(auth);
         Self {
             conversations: Arc::new(RwLock::new(HashMap::new())),
-            auth_manager: crate::AuthManager::from_auth_for_testing(auth.clone()),
+            auth_manager: auth_manager.clone(),
             session_source: SessionSource::Exec,
-            models_manager: Arc::new(ModelsManager::with_provider(
-                crate::AuthManager::from_auth_for_testing(auth),
-                provider,
-            )),
+            models_manager: Arc::new(ModelsManager::with_provider(auth_manager, provider)),
         }
     }
 

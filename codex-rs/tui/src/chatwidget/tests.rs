@@ -349,9 +349,10 @@ async fn helpers_are_available_and_do_not_panic() {
     let cfg = test_config();
     let resolved_model = ModelsManager::get_model_offline(cfg.model.as_deref());
     let model_family = ModelsManager::construct_model_family_offline(&resolved_model, &cfg);
-    let conversation_manager = Arc::new(ConversationManager::with_auth(CodexAuth::from_api_key(
-        "test",
-    )));
+    let conversation_manager = Arc::new(ConversationManager::with_models_provider(
+        CodexAuth::from_api_key("test"),
+        cfg.model_provider.clone(),
+    ));
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("test"));
     let init = ChatWidgetInit {
         config: cfg,
