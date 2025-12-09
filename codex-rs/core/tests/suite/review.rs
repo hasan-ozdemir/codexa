@@ -424,8 +424,7 @@ async fn review_uses_custom_review_model_from_config() {
     .await;
     let _complete = wait_for_event(&codex, |ev| matches!(ev, EventMsg::TaskComplete(_))).await;
 
-    // Assert the review request currently uses the primary chat model.
-    // TODO: switch back to asserting the custom review model once the runtime plumbs it through.
+    // Assert the request body model equals the configured review model
     let request = &server.received_requests().await.unwrap()[0];
     let body = request.body_json::<serde_json::Value>().unwrap();
     assert_eq!(body["model"].as_str().unwrap(), "gpt-5.1");
