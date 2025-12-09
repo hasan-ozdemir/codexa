@@ -63,6 +63,7 @@ pub struct ModelClient {
     effort: Option<ReasoningEffortConfig>,
     summary: ReasoningSummaryConfig,
     session_source: SessionSource,
+    model: String,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -77,6 +78,7 @@ impl ModelClient {
         summary: ReasoningSummaryConfig,
         conversation_id: ConversationId,
         session_source: SessionSource,
+        model: String,
     ) -> Self {
         Self {
             config,
@@ -88,6 +90,7 @@ impl ModelClient {
             effort,
             summary,
             session_source,
+            model,
         }
     }
 
@@ -166,7 +169,7 @@ impl ModelClient {
 
             let stream_result = client
                 .stream_prompt(
-                    &self.config.model,
+                    &self.get_model(),
                     &api_prompt,
                     Some(conversation_id.clone()),
                     Some(session_source.clone()),
@@ -260,7 +263,7 @@ impl ModelClient {
             };
 
             let stream_result = client
-                .stream_prompt(&self.config.model, &api_prompt, options)
+                .stream_prompt(&self.get_model(), &api_prompt, options)
                 .await;
 
             match stream_result {
@@ -292,7 +295,7 @@ impl ModelClient {
 
     /// Returns the currently configured model slug.
     pub fn get_model(&self) -> String {
-        self.config.model.clone()
+        self.model.clone()
     }
 
     /// Returns the currently configured model family.
@@ -337,7 +340,7 @@ impl ModelClient {
             .get_full_instructions(&self.get_model_family())
             .into_owned();
         let payload = ApiCompactionInput {
-            model: &self.config.model,
+            model: &self.get_model(),
             input: &prompt.input,
             instructions: &instructions,
         };

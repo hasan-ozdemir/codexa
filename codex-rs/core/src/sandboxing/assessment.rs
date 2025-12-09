@@ -9,6 +9,7 @@ use crate::ModelProviderInfo;
 use crate::client::ModelClient;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
+use crate::codex::TurnContext;
 use crate::config::Config;
 use crate::openai_models::models_manager::ModelsManager;
 use crate::protocol::SandboxPolicy;
@@ -19,7 +20,6 @@ use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::protocol::SandboxCommandAssessment;
-use codex_protocol::protocol::SessionSource;
 use futures::StreamExt;
 use serde_json::json;
 use tokio::time::timeout;
@@ -48,12 +48,10 @@ pub(crate) async fn assess_command(
     parent_otel: &OtelEventManager,
     conversation_id: ConversationId,
     models_manager: Arc<ModelsManager>,
-    session_source: SessionSource,
     call_id: &str,
     command: &[String],
-    sandbox_policy: &SandboxPolicy,
-    cwd: &Path,
     failure_message: Option<&str>,
+    turn_context: &TurnContext,
 ) -> Option<SandboxCommandAssessment> {
     if !config.experimental_sandbox_command_assessment || command.is_empty() {
         return None;
@@ -67,9 +65,9 @@ pub(crate) async fn assess_command(
         .filter(|msg| !msg.is_empty())
         .map(str::to_string);
 
-    let cwd_str = cwd.to_string_lossy().to_string();
-    let sandbox_summary = summarize_sandbox_policy(sandbox_policy);
-    let mut roots = sandbox_roots_for_prompt(sandbox_policy, cwd);
+    let cwd_str = turn_context.cwd.to_string_lossy().to_string();
+    let sandbox_summary = summarize_sandbox_policy(&turn_context.sandbox_policy);
+    let mut roots = sandbox_roots_for_prompt(&turn_context.sandbox_policy, &turn_context.cwd);
     roots.sort();
     roots.dedup();
 
@@ -127,10 +125,13 @@ pub(crate) async fn assess_command(
     };
 
     let model_family = models_manager
-        .construct_model_family(&config.model, &config)
+        .construct_model_family(&turn_context.client.get_model(), &config)
         .await;
 
-    let child_otel = parent_otel.with_model(config.model.as_str(), model_family.slug.as_str());
+    let child_otel = parent_otel.with_model(
+        turn_context.client.get_model().as_str(),
+        model_family.slug.as_str(),
+    );
 
     let client = ModelClient::new(
         Arc::clone(&config),
@@ -141,7 +142,8 @@ pub(crate) async fn assess_command(
         Some(SANDBOX_ASSESSMENT_REASONING_EFFORT),
         config.model_reasoning_summary,
         conversation_id,
-        session_source,
+        turn_context.client.get_session_source(),
+        turn_context.client.get_model(),
     );
 
     let start = Instant::now();

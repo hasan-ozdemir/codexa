@@ -28,6 +28,7 @@ use crate::openai_models::model_presets::builtin_model_presets;
 
 const MODEL_CACHE_FILE: &str = "models_cache.json";
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
+const OPENAI_DEFAULT_MODEL: &str = "gpt-5.1-codex-max";
 
 /// Coordinates remote model discovery plus cached metadata on disk.
 #[derive(Debug)]
@@ -96,6 +97,22 @@ impl ModelsManager {
         find_family_for_model(model)
             .with_config_overrides(config)
             .with_remote_overrides(self.remote_models.read().await.clone())
+    }
+
+    pub async fn default_model(&self) -> String {
+        // if codex-auto-balanced exists & signed in with chatgpt mode, return it, otherwise return the default model
+        let auth_mode = self.auth_manager.get_auth_mode();
+        if auth_mode == Some(AuthMode::ChatGPT)
+            && self
+                .available_models
+                .read()
+                .await
+                .iter()
+                .any(|m| m.model == "codex-auto-balanced")
+        {
+            return "codex-auto-balanced".to_string();
+        }
+        OPENAI_DEFAULT_MODEL.to_string()
     }
 
     #[cfg(any(test, feature = "test-support"))]

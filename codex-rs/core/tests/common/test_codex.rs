@@ -69,7 +69,7 @@ impl TestCodexBuilder {
     pub fn with_model(self, model: &str) -> Self {
         let new_model = model.to_string();
         self.with_config(move |config| {
-            config.model = new_model.clone();
+            config.model = Some(new_model.clone());
         })
     }
 

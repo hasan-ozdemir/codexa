@@ -58,7 +58,6 @@ pub mod edit;
 pub mod profile;
 pub mod types;
 
-pub const OPENAI_DEFAULT_MODEL: &str = "gpt-5.1-codex-max";
 const OPENAI_DEFAULT_REVIEW_MODEL: &str = "gpt-5.1-codex-max";
 
 /// Maximum number of bytes of the documentation that will be embedded. Larger
@@ -72,7 +71,7 @@ pub const CONFIG_TOML_FILE: &str = "config.toml";
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     /// Optional override of model selection.
-    pub model: String,
+    pub model: Option<String>,
 
     /// Model used specifically for review sessions. Defaults to "gpt-5.1-codex-max".
     pub review_model: String,
@@ -1105,10 +1104,7 @@ impl Config {
         let forced_login_method = cfg.forced_login_method;
 
         // todo(aibrahim): make model optional
-        let model = model
-            .or(config_profile.model)
-            .or(cfg.model)
-            .unwrap_or_else(default_model);
+        let model = model.or(config_profile.model).or(cfg.model);
 
         let compact_prompt = compact_prompt.or(cfg.compact_prompt).and_then(|value| {
             let trimmed = value.trim();
@@ -1308,10 +1304,6 @@ impl Config {
         }
         self.forced_auto_mode_downgraded_on_windows = !value;
     }
-}
-
-fn default_model() -> String {
-    OPENAI_DEFAULT_MODEL.to_string()
 }
 
 fn default_review_model() -> String {

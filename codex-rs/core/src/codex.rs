@@ -181,10 +181,20 @@ impl Codex {
         let exec_policy = Arc::new(RwLock::new(exec_policy));
 
         let config = Arc::new(config);
-
+        if config.features.enabled(Feature::RemoteModels)
+            && let Err(err) = models_manager
+                .refresh_available_models(&config.model_provider)
+                .await
+        {
+            error!("failed to refresh available models: {err:?}");
+        }
+        let model = match config.model.clone() {
+            Some(model) => model,
+            None => models_manager.default_model().await,
+        };
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
-            model: config.model.clone(),
+            model: model.clone(),
             model_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
@@ -401,7 +411,6 @@ impl Session {
     fn build_per_turn_config(session_configuration: &SessionConfiguration) -> Config {
         let config = session_configuration.original_config_do_not_use.clone();
         let mut per_turn_config = (*config).clone();
-        per_turn_config.model = session_configuration.model.clone();
         per_turn_config.model_reasoning_effort = session_configuration.model_reasoning_effort;
         per_turn_config.model_reasoning_summary = session_configuration.model_reasoning_summary;
         per_turn_config.features = config.features.clone();
@@ -435,6 +444,7 @@ impl Session {
             session_configuration.model_reasoning_summary,
             conversation_id,
             session_configuration.session_source.clone(),
+            session_configuration.model.clone(),
         );
 
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
@@ -546,12 +556,12 @@ impl Session {
         }
 
         let model_family = models_manager
-            .construct_model_family(&config.model, &config)
+            .construct_model_family(&session_configuration.model, &config)
             .await;
         // todo(aibrahim): why are we passing model here while it can change?
         let otel_event_manager = OtelEventManager::new(
             conversation_id,
-            config.model.as_str(),
+            session_configuration.model.as_str(),
             model_family.slug.as_str(),
             auth_manager.auth().and_then(|a| a.get_account_id()),
             auth_manager.auth().and_then(|a| a.get_account_email()),
@@ -774,7 +784,7 @@ impl Session {
         let model_family = self
             .services
             .models_manager
-            .construct_model_family(&per_turn_config.model, &per_turn_config)
+            .construct_model_family(&session_configuration.model, &per_turn_config)
             .await;
         let mut turn_context: TurnContext = Self::make_turn_context(
             Some(Arc::clone(&self.services.auth_manager)),
@@ -884,12 +894,10 @@ impl Session {
             &otel,
             self.conversation_id,
             self.services.models_manager.clone(),
-            turn_context.client.get_session_source(),
             call_id,
             command,
-            &turn_context.sandbox_policy,
-            &turn_context.cwd,
             failure_message,
+            turn_context,
         )
         .await
     }
@@ -1465,16 +1473,6 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
     let mut previous_context: Option<Arc<TurnContext>> =
         Some(sess.new_turn(SessionSettingsUpdate::default()).await);
 
-    if config.features.enabled(Feature::RemoteModels)
-        && let Err(err) = sess
-            .services
-            .models_manager
-            .refresh_available_models(&config.model_provider)
-            .await
-    {
-        error!("failed to refresh available models: {err}");
-    }
-
     // To break out of this loop, send Op::Shutdown.
     while let Ok(sub) = rx_sub.recv().await {
         debug!(?sub, "Submission");
@@ -1946,7 +1944,6 @@ async fn spawn_review_thread(
 
     // Build per‑turn client with the requested model/family.
     let mut per_turn_config = (*config).clone();
-    per_turn_config.model = model.clone();
     per_turn_config.model_reasoning_effort = Some(ReasoningEffortConfig::Low);
     per_turn_config.model_reasoning_summary = ReasoningSummaryConfig::Detailed;
     per_turn_config.features = review_features.clone();
@@ -1955,7 +1952,7 @@ async fn spawn_review_thread(
         .client
         .get_otel_event_manager()
         .with_model(
-            per_turn_config.model.as_str(),
+            parent_turn_context.client.get_model().as_str(),
             review_model_family.slug.as_str(),
         );
 
@@ -1970,6 +1967,7 @@ async fn spawn_review_thread(
         per_turn_config.model_reasoning_summary,
         sess.conversation_id,
         parent_turn_context.client.get_session_source(),
+        parent_turn_context.client.get_model(),
     );
 
     let review_turn_context = TurnContext {
