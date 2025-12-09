@@ -48,6 +48,44 @@ fn paths_match(a: &std::path::Path, b: &std::path::Path) -> bool {
     a == b
 }
 
+async fn latest_session_for_cwd(
+    codex_home: &std::path::Path,
+    provider_id: &str,
+    cwd_filter: Option<std::path::PathBuf>,
+) -> color_eyre::Result<Option<std::path::PathBuf>> {
+    let provider_filter = vec![provider_id.to_string()];
+    let mut cursor: Option<codex_core::Cursor> = None;
+
+    loop {
+        let page = RolloutRecorder::list_conversations(
+            codex_home,
+            50,
+            cursor.as_ref(),
+            INTERACTIVE_SESSION_SOURCES,
+            Some(provider_filter.as_slice()),
+            provider_id,
+        )
+        .await?;
+
+        if let Some(matched) = page.items.iter().find(|it| {
+            if let Some(ref cwd) = cwd_filter {
+                session_cwd(it).is_some_and(|p| paths_match(&p, cwd))
+            } else {
+                true
+            }
+        }) {
+            return Ok(Some(matched.path.clone()));
+        }
+
+        cursor = page.next_cursor;
+        if cursor.is_none() {
+            break;
+        }
+    }
+
+    Ok(None)
+}
+
 mod additional_dirs;
 mod app;
 mod app_backtrack;
@@ -471,34 +509,17 @@ async fn run_ratatui_app(
             }
         }
     } else if cli.resume_last {
-        let provider_filter = vec![config.model_provider_id.clone()];
-        let page = RolloutRecorder::list_conversations(
-            &config.codex_home,
-            1,
-            None,
-            INTERACTIVE_SESSION_SOURCES,
-            Some(provider_filter.as_slice()),
-            &config.model_provider_id,
-        )
-        .await;
-        match page {
-            Ok(page) => {
-                let cwd_filter = if resume_picker::folder_based_sessions_enabled() {
-                    cli.cwd.clone().or_else(|| std::env::current_dir().ok())
-                } else {
-                    None
-                };
-                let matched = page.items.iter().find(|it| {
-                    if let Some(ref cwd) = cwd_filter {
-                        session_cwd(it).is_some_and(|p| paths_match(&p, cwd))
-                    } else {
-                        true
-                    }
-                });
-                matched
-                    .map(|it| resume_picker::ResumeSelection::Resume(it.path.clone()))
-                    .unwrap_or(resume_picker::ResumeSelection::StartFresh)
-            }
+        let cwd_filter = if resume_picker::folder_based_sessions_enabled() {
+            cli.cwd.clone().or_else(|| std::env::current_dir().ok())
+        } else {
+            None
+        };
+
+        match latest_session_for_cwd(&config.codex_home, &config.model_provider_id, cwd_filter)
+            .await
+        {
+            Ok(Some(path)) => resume_picker::ResumeSelection::Resume(path),
+            Ok(None) => resume_picker::ResumeSelection::StartFresh,
             Err(err) => {
                 error!("Error listing conversations: {err}");
                 resume_picker::ResumeSelection::StartFresh
