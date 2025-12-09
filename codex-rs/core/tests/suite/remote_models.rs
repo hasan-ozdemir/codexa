@@ -3,6 +3,12 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use codex_core::CodexAuth;
+use codex_core::CodexConversation;
+use codex_core::ConversationManager;
+use codex_core::ModelProviderInfo;
+use codex_core::built_in_model_providers;
+use codex_core::config::Config;
 use codex_core::features::Feature;
 use codex_core::openai_models::models_manager::ModelsManager;
 use codex_core::protocol::AskForApproval;
@@ -20,6 +26,7 @@ use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_protocol::user_input::UserInput;
+use core_test_support::load_default_config_for_test;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call;
@@ -30,11 +37,10 @@ use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::skip_if_no_network;
 use core_test_support::skip_if_sandbox;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
 use serde_json::json;
+use tempfile::TempDir;
 use tokio::time::Duration;
 use tokio::time::Instant;
 use tokio::time::sleep;
@@ -80,18 +86,19 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
     )
     .await;
 
-    let mut builder = test_codex().with_config(|config| {
+    let harness = build_remote_models_harness(&server, |config| {
         config.features.enable(Feature::RemoteModels);
         config.model = Some("gpt-5.1".to_string());
-    });
+    })
+    .await?;
 
-    let TestCodex {
+    let RemoteModelsHarness {
         codex,
         cwd,
         config,
         conversation_manager,
         ..
-    } = builder.build(&server).await?;
+    } = harness;
 
     let models_manager = conversation_manager.get_models_manager();
     let available_model = wait_for_model_available(&models_manager, REMOTE_MODEL_SLUG).await;
@@ -218,17 +225,18 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
     )
     .await;
 
-    let mut builder = test_codex().with_config(|config| {
+    let harness = build_remote_models_harness(&server, |config| {
         config.features.enable(Feature::RemoteModels);
         config.model = Some("gpt-5.1".to_string());
-    });
+    })
+    .await?;
 
-    let TestCodex {
+    let RemoteModelsHarness {
         codex,
         cwd,
         conversation_manager,
         ..
-    } = builder.build(&server).await?;
+    } = harness;
 
     let models_manager = conversation_manager.get_models_manager();
     wait_for_model_available(&models_manager, model).await;
@@ -282,4 +290,51 @@ async fn wait_for_model_available(manager: &Arc<ModelsManager>, slug: &str) -> M
         }
         sleep(Duration::from_millis(25)).await;
     }
+}
+
+struct RemoteModelsHarness {
+    codex: Arc<CodexConversation>,
+    cwd: Arc<TempDir>,
+    config: Config,
+    conversation_manager: Arc<ConversationManager>,
+}
+
+async fn build_remote_models_harness<F>(
+    server: &MockServer,
+    mutate_config: F,
+) -> Result<RemoteModelsHarness>
+where
+    F: FnOnce(&mut Config),
+{
+    let auth = CodexAuth::from_api_key("dummy");
+    let home = Arc::new(TempDir::new()?);
+    let cwd = Arc::new(TempDir::new()?);
+
+    let mut config = load_default_config_for_test(&home);
+    config.cwd = cwd.path().to_path_buf();
+    config.features.enable(Feature::RemoteModels);
+
+    let provider = ModelProviderInfo {
+        base_url: Some(format!("{}/v1", server.uri())),
+        ..built_in_model_providers()["openai"].clone()
+    };
+    config.model_provider = provider.clone();
+
+    mutate_config(&mut config);
+
+    let conversation_manager = Arc::new(ConversationManager::with_models_provider(
+        auth,
+        Some(provider),
+    ));
+
+    let new_conversation = conversation_manager
+        .new_conversation(config.clone())
+        .await?;
+
+    Ok(RemoteModelsHarness {
+        codex: new_conversation.conversation,
+        cwd,
+        config,
+        conversation_manager,
+    })
 }
