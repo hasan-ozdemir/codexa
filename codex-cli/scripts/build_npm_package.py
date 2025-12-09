@@ -168,8 +168,8 @@ def stage_sources(staging_dir: Path, version: str, package: str) -> None:
         if readme_src.exists():
             shutil.copy2(readme_src, staging_dir / "README.md")
 
-        extensions_dest = staging_dir / "extensions"
-        extensions_source = REPO_ROOT / "extensions"
+        extensions_dest = staging_dir / "codex-extensions"
+        extensions_source = REPO_ROOT / "codex-extensions"
         if extensions_source.exists():
             _copy_tree_merge(extensions_source, extensions_dest)
 

@@ -771,6 +771,7 @@ impl ExtensionHost {
                 .ancestors()
                 .any(|p| p.components().any(|c| c.as_os_str() == "node_modules"));
             for ancestor in exe.ancestors() {
+                candidates.push(ancestor.join("codex-extensions").join("extensions"));
                 candidates.push(ancestor.join("extensions"));
             }
         }
@@ -780,6 +781,7 @@ impl ExtensionHost {
         // including cwd/extensions keeps local edits active.
         if !is_packaged {
             if let Ok(cwd) = env::current_dir() {
+                candidates.push(cwd.join("codex-extensions").join("extensions"));
                 candidates.push(cwd.join("extensions"));
             }
         }
@@ -823,13 +825,16 @@ impl ExtensionHost {
         }
         if let Ok(exe) = env::current_exe() {
             for ancestor in exe.ancestors() {
+                candidates.push(ancestor.join("codex-extensions"));
                 candidates.push(ancestor.join("extensions"));
             }
             if let Some(vendor_parent) = exe.parent().and_then(|p| p.parent()) {
+                candidates.push(vendor_parent.join("codex-extensions"));
                 candidates.push(vendor_parent.join("extensions"));
             }
         }
         if let Ok(cwd) = env::current_dir() {
+            candidates.push(cwd.join("codex-extensions"));
             candidates.push(cwd.join("extensions"));
         }
         // NPM global default on Windows: %APPDATA%\npm\node_modules\@openai\codex\extensions
@@ -842,7 +847,7 @@ impl ExtensionHost {
                     .join("node_modules")
                     .join("@openai")
                     .join("codex")
-                    .join("extensions");
+                    .join("codex-extensions");
                 candidates.push(npm_ext);
             }
         }

@@ -40,33 +40,41 @@ function log(msg) {
 function discoverScripts() {
   const candidates = [];
 
+  const isPackaged =
+    __dirname.toLowerCase().includes(`${path.sep}node_modules${path.sep}`);
+
   if (process.env.CODEX_TUI_EXTENSION_DIR) {
     candidates.push(process.env.CODEX_TUI_EXTENSION_DIR);
   }
-
-  const exe = process.execPath;
-  const exeAncestors = [];
-  let cur = path.dirname(exe);
-  while (cur && cur !== path.dirname(cur)) {
-    exeAncestors.push(cur);
-    cur = path.dirname(cur);
-  }
-  for (const dir of exeAncestors) {
-    candidates.push(path.join(dir, "extensions"));
+  if (!isPackaged) {
+    const exe = process.execPath;
+    const exeAncestors = [];
+    let cur = path.dirname(exe);
+    while (cur && cur !== path.dirname(cur)) {
+      exeAncestors.push(cur);
+      cur = path.dirname(cur);
+    }
+    for (const dir of exeAncestors) {
+      candidates.push(path.join(dir, "codex-extensions", "extensions"));
+      candidates.push(path.join(dir, "extensions"));
+    }
   }
 
   // Prefer the directory where this client script lives (npm package extensions dir)
   const scriptDir = __dirname;
   if (scriptDir) {
-    candidates.push(scriptDir);
-    candidates.push(path.join(scriptDir, "..")); // for future layout changes
+    candidates.push(path.join(scriptDir, "extensions"));
   }
 
-  const isPackaged = exeAncestors.some((p) =>
-    p.split(path.sep).includes("node_modules"),
-  );
   if (!isPackaged) {
+    candidates.push(path.join(process.cwd(), "codex-extensions", "extensions"));
     candidates.push(path.join(process.cwd(), "extensions"));
+  }
+
+  // In packaged installs prefer only the dir where this script lives.
+  if (isPackaged) {
+    candidates.length = 0;
+    candidates.push(path.join(__dirname, "extensions"));
   }
 
   log(
@@ -87,6 +95,8 @@ function discoverScripts() {
       if (!entry.toLowerCase().endsWith(".js")) continue;
       const full = path.join(dir, entry);
       if (fs.statSync(full).isFile()) {
+        const name = entry.toLowerCase();
+        if (name === "extension-client.js") continue; // avoid recursive self-load
         // Never treat the extension-client itself as an extension handler; doing
         // so causes circular require warnings and timeouts.
         if (selfPath && path.resolve(full) === selfPath) continue;
