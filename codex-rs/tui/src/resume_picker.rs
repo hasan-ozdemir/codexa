@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::fs;
-use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -87,9 +86,6 @@ pub async fn run_resume_picker(
         filter_cwd.and_then(|p| p.canonicalize().ok()).or(original)
     };
 
-    if folder_based_sessions_enabled() {
-        tokio::spawn(build_session_index(codex_home.to_path_buf()));
-    }
 
     let loader_tx = bg_tx.clone();
     let page_loader: PageLoader = Arc::new(move |request: PageLoadRequest| {
@@ -723,20 +719,6 @@ pub fn folder_based_sessions_enabled() -> bool {
     read_config_bool("folder_based_sessions", true)
 }
 
-pub fn sync_session_index_background(codex_home: &Path) {
-    if !folder_based_sessions_enabled() {
-        return;
-    }
-    tokio::spawn(build_session_index(codex_home.to_path_buf()));
-}
-
-pub async fn rebuild_session_index(codex_home: &Path) {
-    if !folder_based_sessions_enabled() {
-        return;
-    }
-    build_session_index(codex_home.to_path_buf()).await;
-}
-
 fn read_config_bool(key: &str, default_val: bool) -> bool {
     let path = dirs::home_dir()
         .map(|h| h.join(".codex").join("config.toml"))
@@ -750,53 +732,6 @@ fn read_config_bool(key: &str, default_val: bool) -> bool {
     val.get(key)
         .and_then(toml::Value::as_bool)
         .unwrap_or(default_val)
-}
-
-fn extract_session_id_from_head(head: &[serde_json::Value]) -> Option<String> {
-    head.iter()
-        .find_map(|value| serde_json::from_value::<SessionMetaLine>(value.clone()).ok())
-        .map(|m| m.meta.id.to_string())
-}
-
-async fn build_session_index(codex_home: PathBuf) {
-    let mut cursor: Option<Cursor> = None;
-    let mut lines: Vec<String> = Vec::new();
-    loop {
-        let page = RolloutRecorder::list_conversations(
-            &codex_home,
-            500,
-            cursor.as_ref(),
-            INTERACTIVE_SESSION_SOURCES,
-            None,
-            "",
-        )
-        .await;
-        let Ok(page) = page else { break };
-        for item in page.items {
-            if let (Some(id), Some(cwd)) = (
-                extract_session_id_from_head(&item.head),
-                extract_session_meta_from_head(&item.head).0,
-            ) {
-                let path = item.path.to_string_lossy().to_string();
-                let cwd_str = cwd.to_string_lossy().to_string();
-                lines.push(serde_json::json!({"id": id, "path": path, "cwd": cwd_str}).to_string());
-            }
-        }
-        cursor = page.next_cursor;
-        if cursor.is_none() {
-            break;
-        }
-    }
-
-    let history_dir = codex_home.join("history");
-    let index_path = history_dir.join("session_index.jsonl");
-    if fs::create_dir_all(&history_dir).is_ok()
-        && let Ok(mut file) = fs::File::create(index_path)
-    {
-        for line in lines {
-            let _ = writeln!(file, "{line}");
-        }
-    }
 }
 
 fn extract_timestamp(value: &serde_json::Value) -> Option<DateTime<Utc>> {

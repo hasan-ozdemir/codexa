@@ -50,10 +50,14 @@ function log(msg) {
   }
 }
 
+const home = os.homedir();
 const historyDir = (() => {
-  const home = os.homedir();
   if (home) return path.join(home, ".codex", "history");
   return path.join(os.tmpdir(), "codex-history");
+})();
+const sessionsDir = (() => {
+  if (home) return path.join(home, ".codex", "sessions");
+  return path.join(os.tmpdir(), "codex-sessions");
 })();
 const currentSessionFile = path.join(historyDir, "current_session");
 const lastSessionPathFile = path.join(historyDir, "current_session_path");
@@ -663,11 +667,12 @@ function dispatch(req) {
     case "history_delete":
       return handleDelete(req);
     default:
-  return { status: "skip" };
+      return { status: "skip" };
+  }
 }
 
 function handleList(req) {
-  const entries = readSessionIndex();
+  const entries = scanSessions();
   const folderBased =
     process.env.FOLDER_BASED_SESSIONS?.toLowerCase?.() !== "false" &&
     process.env.folder_based_sessions?.toLowerCase?.() !== "false";
@@ -679,22 +684,67 @@ function handleList(req) {
   return { status: "ok", sessions: filtered };
 }
 
-function readSessionIndex() {
-  const file = path.join(historyDir, "session_index.jsonl");
-  if (!fs.existsSync(file)) return [];
-  const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
+function scanSessions() {
   const out = [];
-  for (const line of lines) {
-    if (!line.trim()) continue;
+  const stack = [sessionsDir];
+  while (stack.length) {
+    const dir = stack.pop();
+    let entries;
     try {
-      const obj = JSON.parse(line);
-      out.push(obj);
-    } catch (err) {
-      log(`history_list failed to parse line: ${err}`);
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (_err) {
+      continue;
+    }
+    for (const ent of entries) {
+      const p = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        stack.push(p);
+        continue;
+      }
+      if (!ent.name.toLowerCase().endsWith(".jsonl")) continue;
+      const meta = readSessionMeta(p);
+      if (!meta) continue;
+      out.push(meta);
     }
   }
-  return out;
+  return out.sort((a, b) => b.mtime_ms - a.mtime_ms);
 }
+
+function readSessionMeta(filePath) {
+  let stat;
+  try {
+    stat = fs.statSync(filePath);
+  } catch (_err) {
+    return null;
+  }
+  let id = null;
+  let cwd = null;
+  try {
+    const contents = fs.readFileSync(filePath, "utf8");
+    const lines = contents.split(/\r?\n/);
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const obj = JSON.parse(line);
+      const meta = obj?.payload?.meta ?? obj?.meta;
+      if (meta?.id) id = String(meta.id);
+      if (meta?.cwd) cwd = String(meta.cwd);
+      if (id && cwd) break;
+    }
+  } catch (err) {
+    log(`history_list read meta failed: ${err}`);
+    return null;
+  }
+  if (!id || !cwd) return null;
+  return { id, cwd, path: filePath, mtime_ms: stat.mtimeMs };
+}
+
+function normalizePath(p) {
+  if (typeof p !== "string") return "";
+  return p
+    .replace(/\\/g, "/")
+    .replace(/^\/\/\?\//, "")
+    .replace(/^\/\//, "/")
+    .toLowerCase();
 }
 
 function main() {

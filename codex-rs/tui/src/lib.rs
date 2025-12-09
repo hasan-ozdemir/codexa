@@ -305,7 +305,6 @@ pub async fn run_main(
     if resume_picker::folder_based_sessions_enabled() {
         let _ = session_normalizer::normalize_sessions(&codex_home).await;
     }
-    resume_picker::sync_session_index_background(&codex_home);
 
     if let Some(warning) = add_dir_warning_message(&cli.add_dir, &config.sandbox_policy) {
         #[allow(clippy::print_stderr)]
@@ -612,7 +611,6 @@ async fn run_ratatui_app(
 
     let Cli { prompt, images, .. } = cli;
 
-    let codex_home_for_index = config.codex_home.clone();
     let app_result = App::run(
         &mut tui,
         auth_manager,
@@ -629,7 +627,6 @@ async fn run_ratatui_app(
     restore();
     // Mark the end of the recorded session.
     session_log::log_session_end();
-    resume_picker::rebuild_session_index(&codex_home_for_index).await;
     // ignore error when collecting usage – report underlying error instead
     app_result
 }
