@@ -1,5 +1,7 @@
 use crate::AuthManager;
 use crate::CodexAuth;
+#[cfg(any(test, feature = "test-support"))]
+use crate::ModelProviderInfo;
 use crate::codex::Codex;
 use crate::codex::CodexSpawnOk;
 use crate::codex::INITIAL_SUBMIT_ID;
@@ -59,6 +61,19 @@ impl ConversationManager {
             crate::AuthManager::from_auth_for_testing(auth),
             SessionSource::Exec,
         )
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_models_provider(auth: CodexAuth, provider: Option<ModelProviderInfo>) -> Self {
+        Self {
+            conversations: Arc::new(RwLock::new(HashMap::new())),
+            auth_manager: crate::AuthManager::from_auth_for_testing(auth.clone()),
+            session_source: SessionSource::Exec,
+            models_manager: Arc::new(ModelsManager::new(
+                crate::AuthManager::from_auth_for_testing(auth),
+                provider,
+            )),
+        }
     }
 
     pub fn session_source(&self) -> SessionSource {
