@@ -84,20 +84,6 @@ fn test_config() -> Config {
     .expect("config")
 }
 
-fn config_model(config: &Config) -> &str {
-    config
-        .model
-        .as_deref()
-        .expect("tests require a configured model")
-}
-
-fn config_model_string(config: &Config) -> String {
-    config
-        .model
-        .clone()
-        .expect("tests require a configured model")
-}
-
 fn snapshot(percent: f64) -> RateLimitSnapshot {
     RateLimitSnapshot {
         primary: Some(RateLimitWindow {
@@ -361,8 +347,8 @@ async fn helpers_are_available_and_do_not_panic() {
     let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
     let tx = AppEventSender::new(tx_raw);
     let cfg = test_config();
-    let resolved_model = config_model_string(&cfg);
-    let model_family = ModelsManager::construct_model_family_offline(config_model(&cfg), &cfg);
+    let resolved_model = ModelsManager::default_model_offline(&cfg);
+    let model_family = ModelsManager::construct_model_family_offline(&resolved_model, &cfg);
     let conversation_manager = Arc::new(ConversationManager::with_auth(CodexAuth::from_api_key(
         "test",
     )));
@@ -399,6 +385,9 @@ fn make_chatwidget_manual(
     let app_event_tx = AppEventSender::new(tx_raw);
     let (op_tx, op_rx) = unbounded_channel::<Op>();
     let mut cfg = test_config();
+    let resolved_model = model_override
+        .map(str::to_owned)
+        .unwrap_or_else(|| ModelsManager::default_model_offline(&cfg));
     if let Some(model) = model_override {
         cfg.model = Some(model.to_string());
     }
@@ -419,11 +408,11 @@ fn make_chatwidget_manual(
         bottom_pane: bottom,
         active_cell: None,
         config: cfg.clone(),
-        model_family: ModelsManager::construct_model_family_offline(config_model(&cfg), &cfg),
-        model: config_model_string(&cfg),
+        model_family: ModelsManager::construct_model_family_offline(&resolved_model, &cfg),
+        model: resolved_model.clone(),
         auth_manager: auth_manager.clone(),
         models_manager: Arc::new(ModelsManager::new(auth_manager)),
-        session_header: SessionHeader::new(config_model_string(&cfg)),
+        session_header: SessionHeader::new(resolved_model.clone()),
         initial_user_message: None,
         token_info: None,
         rate_limit_snapshot: None,
