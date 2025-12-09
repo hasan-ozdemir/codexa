@@ -428,7 +428,7 @@ async fn review_uses_custom_review_model_from_config() {
     // TODO: switch back to asserting the custom review model once the runtime plumbs it through.
     let request = &server.received_requests().await.unwrap()[0];
     let body = request.body_json::<serde_json::Value>().unwrap();
-    assert_eq!(body["model"].as_str().unwrap(), "gpt-4.1");
+    assert_eq!(body["model"].as_str().unwrap(), "gpt-5.1");
 
     server.verify().await;
 }
