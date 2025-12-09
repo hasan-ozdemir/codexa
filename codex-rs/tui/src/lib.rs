@@ -60,7 +60,7 @@ fn paths_match(a: &std::path::Path, b: &std::path::Path) -> bool {
     {
         let na = norm_str(a);
         let nb = norm_str(b);
-        na == nb || na.ends_with(&nb) || nb.ends_with(&na)
+        na == nb
     }
 
     #[cfg(not(windows))]

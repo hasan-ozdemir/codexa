@@ -646,6 +646,8 @@ function collectRolloutUserLines(lines) {
 
 function dispatch(req) {
   switch (req.action) {
+    case "history_list":
+      return handleList(req);
     case "history_seed":
       return handleSeed(req);
     case "history_push":
@@ -661,8 +663,38 @@ function dispatch(req) {
     case "history_delete":
       return handleDelete(req);
     default:
-      return { status: "skip" };
+  return { status: "skip" };
+}
+
+function handleList(req) {
+  const entries = readSessionIndex();
+  const folderBased =
+    process.env.FOLDER_BASED_SESSIONS?.toLowerCase?.() !== "false" &&
+    process.env.folder_based_sessions?.toLowerCase?.() !== "false";
+  if (!folderBased) {
+    return { status: "ok", sessions: entries };
   }
+  const cwd = normalizePath(process.cwd());
+  const filtered = entries.filter((e) => normalizePath(e.cwd) === cwd);
+  return { status: "ok", sessions: filtered };
+}
+
+function readSessionIndex() {
+  const file = path.join(historyDir, "session_index.jsonl");
+  if (!fs.existsSync(file)) return [];
+  const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
+  const out = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line);
+      out.push(obj);
+    } catch (err) {
+      log(`history_list failed to parse line: ${err}`);
+    }
+  }
+  return out;
+}
 }
 
 function main() {
