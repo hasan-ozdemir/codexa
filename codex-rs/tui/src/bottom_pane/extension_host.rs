@@ -27,7 +27,6 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
-use toml;
 use tracing::warn;
 
 use super::external_editor::ExternalEditorError;
@@ -178,7 +177,7 @@ impl ExtensionBridge {
             .stderr(Stdio::null());
         ExtensionHost::log_static(
             log_path,
-            &format!(
+            format!(
                 "Spawning extension-client: node={:?} script={}",
                 cmd.get_program(),
                 script.display()
@@ -191,7 +190,7 @@ impl ExtensionBridge {
             if let Some(status) = child.try_wait().ok().flatten() {
                 ExtensionHost::log_static(
                     log_path,
-                    &format!("extension-client exited early with {status}"),
+                    format!("extension-client exited early with {status}"),
                 );
                 return None;
             }
@@ -390,6 +389,7 @@ impl ExtensionHost {
         &self.scripts
     }
 
+    #[allow(dead_code)]
     pub(crate) fn external_edit(&self, text: &str) -> Result<Option<String>, ExternalEditorError> {
         let payload = json!({ "text": text });
         self.log_event("external_edit requested");
@@ -437,10 +437,8 @@ impl ExtensionHost {
                     return;
                 }
                 let payload = json!({ "event": "line_added" });
-                if let Some(bridge) = bridge {
-                    if let Ok(mut guard) = bridge.lock() {
-                        let _ = guard.send_request("notify", payload, &log_path);
-                    }
+                if let Some(bridge) = bridge && let Ok(mut guard) = bridge.lock() {
+                    let _ = guard.send_request("notify", payload, &log_path);
                 }
             });
         } else {
@@ -449,10 +447,8 @@ impl ExtensionHost {
             let event_string = event.to_string();
             std::thread::spawn(move || {
                 let payload = json!({ "event": event_string });
-                if let Some(bridge) = bridge {
-                    if let Ok(mut guard) = bridge.lock() {
-                        let _ = guard.send_request("notify", payload, &log_path);
-                    }
+                if let Some(bridge) = bridge && let Ok(mut guard) = bridge.lock() {
+                    let _ = guard.send_request("notify", payload, &log_path);
                 }
             });
         }
@@ -472,12 +468,11 @@ impl ExtensionHost {
             .unwrap_or(Value::Null);
         let payload = json!({ "text": text, "session_path": session_path_json });
         self.log_event(format!("history_push text='{text}'"));
-        if let Some(bridge) = &self.bridge {
-            if let Ok(mut guard) = bridge.lock() {
-                if let Err(err) = guard.send_request("history_push", payload, &self.log_path) {
-                    warn!(?err, "history_push bridge failed");
-                }
-            }
+        if let Some(bridge) = &self.bridge
+            && let Ok(mut guard) = bridge.lock()
+            && let Err(err) = guard.send_request("history_push", payload, &self.log_path)
+        {
+            warn!(?err, "history_push bridge failed");
         }
     }
 
@@ -779,11 +774,9 @@ impl ExtensionHost {
         // In packaged (npm -g) installations we should not pick up a developer
         // working directory's extensions. In dev/debug runs (cargo/just),
         // including cwd/extensions keeps local edits active.
-        if !is_packaged {
-            if let Ok(cwd) = env::current_dir() {
-                candidates.push(cwd.join("codex-extensions").join("extensions"));
-                candidates.push(cwd.join("extensions"));
-            }
+        if !is_packaged && let Ok(cwd) = env::current_dir() {
+            candidates.push(cwd.join("codex-extensions").join("extensions"));
+            candidates.push(cwd.join("extensions"));
         }
 
         let mut scripts: Vec<PathBuf> = Vec::new();
@@ -838,18 +831,16 @@ impl ExtensionHost {
             candidates.push(cwd.join("extensions"));
         }
         // NPM global default on Windows: %APPDATA%\npm\node_modules\@openai\codex\extensions
-        if cfg!(windows) {
-            if let Some(home) = dirs::home_dir() {
-                let npm_ext = home
-                    .join("AppData")
-                    .join("Roaming")
-                    .join("npm")
-                    .join("node_modules")
-                    .join("@openai")
-                    .join("codex")
-                    .join("codex-extensions");
-                candidates.push(npm_ext);
-            }
+        if cfg!(windows) && let Some(home) = dirs::home_dir() {
+            let npm_ext = home
+                .join("AppData")
+                .join("Roaming")
+                .join("npm")
+                .join("node_modules")
+                .join("@openai")
+                .join("codex")
+                .join("codex-extensions");
+            candidates.push(npm_ext);
         }
         for dir in candidates {
             let path = dir.join("extension-client.js");
@@ -885,16 +876,13 @@ impl ExtensionHost {
 
         if let Some(bridge) = bridge {
             let payload = json!({});
-            if let Ok(ExtensionReply::Ok { payload, .. }) = bridge
-                .lock()
-                .expect("bridge mutex poisoned")
-                .send_request("config", payload, &Self::default_log_path())
+            if let Ok(mut guard) = bridge.lock()
+                && let Ok(ExtensionReply::Ok { payload, .. }) =
+                    guard.send_request("config", payload, &Self::default_log_path())
+                && let Some(Value::Object(obj)) = payload
+                && let Some(parsed) = Self::parse_config(Value::Object(obj))
             {
-                if let Some(Value::Object(obj)) = payload {
-                    if let Some(parsed) = Self::parse_config(Value::Object(obj)) {
-                        cfg = Self::merge_config(cfg, parsed);
-                    }
-                }
+                cfg = Self::merge_config(cfg, parsed);
             }
             Self::ensure_history_binding(
                 &mut cfg.history_prev_keys,
@@ -1031,9 +1019,6 @@ impl ExtensionHost {
         if let Some(v) = obj.get("a11y_audio_cues").and_then(Value::as_bool) {
             cfg.a11y_audio_cues = Some(v);
         }
-        if let Some(v) = obj.get("a11y_audio_cues").and_then(Value::as_bool) {
-            cfg.a11y_audio_cues = Some(v);
-        }
         if let Some(v) = obj.get("enable_codex_log").and_then(Value::as_bool) {
             cfg.enable_codex_log = Some(v);
         }
@@ -1136,10 +1121,8 @@ impl ExtensionHost {
         ));
         *self.session_path.borrow_mut() = Some(seed.path.clone());
         let payload = json!({ "payload": { "entries": seed.entries, "session_path": seed.path } });
-        if let Some(bridge) = &self.bridge {
-            if let Ok(mut guard) = bridge.lock() {
-                let _ = guard.send_request("history_seed", payload.clone(), &self.log_path);
-            }
+        if let Some(bridge) = &self.bridge && let Ok(mut guard) = bridge.lock() {
+            let _ = guard.send_request("history_seed", payload.clone(), &self.log_path);
         }
         for script in &self.scripts {
             let _ = Self::run_script(script, "history_seed", payload.clone(), &self.log_path);
@@ -1345,6 +1328,7 @@ mod tests {
         ExtensionHost {
             scripts: Vec::new(),
             config: ExtensionConfig::default(),
+            config_overrides: HashMap::new(),
             bridge: None,
             last_seed_mtime: RefCell::new(None),
             log_path: PathBuf::from("log"),

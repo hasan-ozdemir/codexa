@@ -38,6 +38,7 @@ pub(crate) enum ExternalEditorError {
         path: PathBuf,
         error: std::string::FromUtf8Error,
     },
+    #[allow(dead_code)]
     Extension(String),
 }
 

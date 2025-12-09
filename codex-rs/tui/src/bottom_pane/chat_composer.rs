@@ -1359,13 +1359,14 @@ impl ChatComposer {
             KeyCode::End => self.extension_host.history_last(),
             _ => None,
         }?;
-        if text.is_empty() && matches!(code, KeyCode::Down | KeyCode::PageDown) {
-            if let Some(draft) = self.draft_buffer.take() {
-                return Some(HistoryNavResult {
-                    text: draft.text,
-                    cursor: Some(draft.cursor),
-                });
-            }
+        if text.is_empty()
+            && matches!(code, KeyCode::Down | KeyCode::PageDown)
+            && let Some(draft) = self.draft_buffer.take()
+        {
+            return Some(HistoryNavResult {
+                text: draft.text,
+                cursor: Some(draft.cursor),
+            });
         }
         Some(HistoryNavResult { text, cursor: None })
     }
