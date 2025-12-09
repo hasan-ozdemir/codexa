@@ -477,18 +477,6 @@ impl ChatComposer {
 
     fn edit_with_external_editor(&mut self) -> bool {
         let current = self.current_text();
-        match self.extension_host.external_edit(&current) {
-            Ok(Some(updated)) => {
-                self.apply_external_editor_text(updated);
-                return true;
-            }
-            Ok(None) => {}
-            Err(error) => {
-                self.report_external_editor_error(error);
-                return true;
-            }
-        }
-
         let editor_override = self.extension_host.config().editor_command.clone();
         match launch_external_editor(&current, &editor_override) {
             Ok(updated) => {
@@ -1443,9 +1431,7 @@ impl ChatComposer {
         {
             return true;
         }
-        key.code == KeyCode::Char('e')
-            && key.modifiers.contains(KeyModifiers::CONTROL)
-            && key.kind == KeyEventKind::Press
+        false
     }
 
     fn matches_history_first(&self, key: &KeyEvent) -> bool {
