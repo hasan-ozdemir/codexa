@@ -2899,7 +2899,7 @@ mod tests {
         };
         let per_turn_config = Session::build_per_turn_config(&session_configuration);
         let model_family = ModelsManager::construct_model_family_offline(
-            &session_configuration.model_family.get_model_slug(),
+            session_configuration.model_family.get_model_slug(),
             &per_turn_config,
         );
         let otel_event_manager =
