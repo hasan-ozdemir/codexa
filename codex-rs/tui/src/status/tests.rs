@@ -154,6 +154,7 @@ fn status_snapshot_includes_reasoning_details() {
         Some(&rate_display),
         None,
         captured_at,
+        config_model(&config),
     );
     let mut rendered_lines = render_lines(&composite.display_lines(80));
     if cfg!(windows) {
@@ -209,6 +210,7 @@ fn status_snapshot_includes_monthly_limit() {
         Some(&rate_display),
         None,
         captured_at,
+        config_model(&config),
     );
     let mut rendered_lines = render_lines(&composite.display_lines(80));
     if cfg!(windows) {
@@ -252,6 +254,7 @@ fn status_snapshot_shows_unlimited_credits() {
         Some(&rate_display),
         None,
         captured_at,
+        config_model(&config),
     );
     let rendered = render_lines(&composite.display_lines(120));
     assert!(
@@ -294,6 +297,7 @@ fn status_snapshot_shows_positive_credits() {
         Some(&rate_display),
         None,
         captured_at,
+        config_model(&config),
     );
     let rendered = render_lines(&composite.display_lines(120));
     assert!(
@@ -336,6 +340,7 @@ fn status_snapshot_hides_zero_credits() {
         Some(&rate_display),
         None,
         captured_at,
+        config_model(&config),
     );
     let rendered = render_lines(&composite.display_lines(120));
     assert!(
@@ -376,6 +381,7 @@ fn status_snapshot_hides_when_has_no_credits_flag() {
         Some(&rate_display),
         None,
         captured_at,
+        config_model(&config),
     );
     let rendered = render_lines(&composite.display_lines(120));
     assert!(
@@ -416,6 +422,7 @@ fn status_card_token_usage_excludes_cached_tokens() {
         None,
         None,
         now,
+        config_model(&config),
     );
     let rendered = render_lines(&composite.display_lines(120));
 
@@ -471,6 +478,7 @@ fn status_snapshot_truncates_in_narrow_terminal() {
         Some(&rate_display),
         None,
         captured_at,
+        config_model(&config),
     );
     let mut rendered_lines = render_lines(&composite.display_lines(70));
     if cfg!(windows) {
@@ -515,6 +523,7 @@ fn status_snapshot_shows_missing_limits_message() {
         None,
         None,
         now,
+        config_model(&config),
     );
     let mut rendered_lines = render_lines(&composite.display_lines(80));
     if cfg!(windows) {
@@ -577,6 +586,7 @@ fn status_snapshot_includes_credits_and_limits() {
         Some(&rate_display),
         None,
         captured_at,
+        config_model(&config),
     );
     let mut rendered_lines = render_lines(&composite.display_lines(80));
     if cfg!(windows) {
@@ -627,6 +637,7 @@ fn status_snapshot_shows_empty_limits_message() {
         Some(&rate_display),
         None,
         captured_at,
+        config_model(&config),
     );
     let mut rendered_lines = render_lines(&composite.display_lines(80));
     if cfg!(windows) {
@@ -686,6 +697,7 @@ fn status_snapshot_shows_stale_limits_message() {
         Some(&rate_display),
         None,
         now,
+        config_model(&config),
     );
     let mut rendered_lines = render_lines(&composite.display_lines(80));
     if cfg!(windows) {
@@ -749,6 +761,7 @@ fn status_snapshot_cached_limits_hide_credits_without_flag() {
         Some(&rate_display),
         None,
         now,
+        config_model(&config),
     );
     let mut rendered_lines = render_lines(&composite.display_lines(80));
     if cfg!(windows) {
@@ -798,6 +811,7 @@ fn status_context_window_uses_last_usage() {
         None,
         None,
         now,
+        config_model(&config),
     );
     let rendered_lines = render_lines(&composite.display_lines(80));
     let context_line = rendered_lines

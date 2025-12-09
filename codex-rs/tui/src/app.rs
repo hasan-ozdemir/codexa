@@ -161,7 +161,7 @@ async fn handle_model_migration_prompt_if_needed(
                 app_event_tx.send(AppEvent::PersistModelMigrationPromptAcknowledged {
                     migration_config: migration_config_key.to_string(),
                 });
-                config.model = target_model.to_string();
+                config.model = Some(target_model.clone());
 
                 let mapped_effort = if let Some(reasoning_effort_mapping) = reasoning_effort_mapping
                     && let Some(reasoning_effort) = config.model_reasoning_effort
@@ -208,6 +208,7 @@ pub(crate) struct App {
     pub(crate) auth_manager: Arc<AuthManager>,
     /// Config is stored here so we can recreate ChatWidgets as needed.
     pub(crate) config: Config,
+    pub(crate) current_model: String,
     pub(crate) active_profile: Option<String>,
 
     pub(crate) file_search: FileSearchManager,
@@ -270,7 +271,7 @@ impl App {
             auth_manager.clone(),
             SessionSource::Cli,
         ));
-        let model = config.model.clone().unwrap_or(
+        let mut model = config.model.clone().unwrap_or(
             conversation_manager
                 .get_models_manager()
                 .default_model()
@@ -279,6 +280,7 @@ impl App {
         let exit_info = handle_model_migration_prompt_if_needed(
             tui,
             &mut config,
+            model.as_str(),
             &app_event_tx,
             auth_mode,
             conversation_manager.get_models_manager(),
@@ -286,6 +288,9 @@ impl App {
         .await;
         if let Some(exit_info) = exit_info {
             return Ok(exit_info);
+        }
+        if let Some(updated_model) = config.model.clone() {
+            model = updated_model;
         }
 
         let skills_outcome = load_skills(&config);
@@ -311,7 +316,7 @@ impl App {
         let enhanced_keys_supported = tui.enhanced_keys_supported();
         let model_family = conversation_manager
             .get_models_manager()
-            .construct_model_family(&config.model, &config)
+            .construct_model_family(model.as_str(), &config)
             .await;
         let mut chat_widget = match resume_selection {
             ResumeSelection::StartFresh | ResumeSelection::Exit => {
@@ -328,6 +333,7 @@ impl App {
                     skills: skills.clone(),
                     is_first_run,
                     model_family,
+                    resolved_model: model.clone(),
                 };
                 ChatWidget::new(init, conversation_manager.clone())
             }
@@ -355,6 +361,7 @@ impl App {
                     skills: skills.clone(),
                     is_first_run,
                     model_family,
+                    resolved_model: model.clone(),
                 };
                 ChatWidget::new_from_existing(
                     init,
@@ -376,6 +383,7 @@ impl App {
             chat_widget,
             auth_manager: auth_manager.clone(),
             config,
+            current_model: model.clone(),
             active_profile,
             file_search,
             enhanced_keys_supported,
@@ -496,7 +504,7 @@ impl App {
         let model_family = self
             .server
             .get_models_manager()
-            .construct_model_family(&self.config.model, &self.config)
+            .construct_model_family(self.current_model.as_str(), &self.config)
             .await;
         match event {
             AppEvent::NewSession => {
@@ -518,8 +526,10 @@ impl App {
                     skills: self.skills.clone(),
                     is_first_run: false,
                     model_family,
+                    resolved_model: self.current_model.clone(),
                 };
                 self.chat_widget = ChatWidget::new(init, self.server.clone());
+                self.current_model = self.chat_widget.model_slug().to_string();
                 if let Some(summary) = summary {
                     let mut lines: Vec<Line<'static>> = vec![summary.usage_line.clone().into()];
                     if let Some(command) = summary.resume_command {
@@ -568,12 +578,14 @@ impl App {
                                     skills: self.skills.clone(),
                                     is_first_run: false,
                                     model_family: model_family.clone(),
+                                    resolved_model: self.current_model.clone(),
                                 };
                                 self.chat_widget = ChatWidget::new_from_existing(
                                     init,
                                     resumed.conversation,
                                     resumed.session_configured,
                                 );
+                                self.current_model = self.chat_widget.model_slug().to_string();
                                 if let Some(summary) = summary {
                                     let mut lines: Vec<Line<'static>> =
                                         vec![summary.usage_line.clone().into()];
@@ -702,7 +714,8 @@ impl App {
                     .construct_model_family(&model, &self.config)
                     .await;
                 self.chat_widget.set_model(&model, model_family);
-                self.config.model = model;
+                self.config.model = Some(model.clone());
+                self.current_model = model;
             }
             AppEvent::OpenReasoningPopup { model } => {
                 self.chat_widget.open_reasoning_popup(model);
@@ -1174,6 +1187,7 @@ mod tests {
     fn make_test_app() -> App {
         let (chat_widget, app_event_tx, _rx, _op_rx) = make_chatwidget_manual_with_sender();
         let config = chat_widget.config_ref().clone();
+        let current_model = chat_widget.model_slug().to_string();
         let server = Arc::new(ConversationManager::with_auth(CodexAuth::from_api_key(
             "Test API Key",
         )));
@@ -1187,6 +1201,7 @@ mod tests {
             chat_widget,
             auth_manager,
             config,
+            current_model,
             active_profile: None,
             file_search,
             transcript_cells: Vec::new(),
@@ -1211,6 +1226,7 @@ mod tests {
     ) {
         let (chat_widget, app_event_tx, rx, op_rx) = make_chatwidget_manual_with_sender();
         let config = chat_widget.config_ref().clone();
+        let current_model = chat_widget.model_slug().to_string();
         let server = Arc::new(ConversationManager::with_auth(CodexAuth::from_api_key(
             "Test API Key",
         )));
@@ -1225,6 +1241,7 @@ mod tests {
                 chat_widget,
                 auth_manager,
                 config,
+                current_model,
                 active_profile: None,
                 file_search,
                 transcript_cells: Vec::new(),
@@ -1350,6 +1367,7 @@ mod tests {
             };
             Arc::new(new_session_info(
                 app.chat_widget.config_ref(),
+                app.current_model.as_str(),
                 event,
                 is_first,
             )) as Arc<dyn HistoryCell>

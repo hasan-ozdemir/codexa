@@ -263,6 +263,7 @@ pub(crate) struct ChatWidgetInit {
     pub(crate) skills: Option<Vec<SkillMetadata>>,
     pub(crate) is_first_run: bool,
     pub(crate) model_family: ModelFamily,
+    pub(crate) resolved_model: String,
 }
 
 #[derive(Default)]
@@ -280,6 +281,7 @@ pub(crate) struct ChatWidget {
     active_cell: Option<Box<dyn HistoryCell>>,
     config: Config,
     model_family: ModelFamily,
+    model: String,
     auth_manager: Arc<AuthManager>,
     models_manager: Arc<ModelsManager>,
     session_header: SessionHeader,
@@ -391,11 +393,15 @@ impl ChatWidget {
             .set_history_metadata(event.history_log_id, event.history_entry_count);
         self.conversation_id = Some(event.session_id);
         self.current_rollout_path = Some(event.rollout_path.clone());
+        let requested_model = self.model.clone();
         let initial_messages = event.initial_messages.clone();
         let model_for_header = event.model.clone();
         self.session_header.set_model(&model_for_header);
+        self.model = model_for_header.clone();
+        self.config.model = Some(self.model.clone());
         self.add_to_history(history_cell::new_session_info(
             &self.config,
+            &requested_model,
             event,
             self.show_welcome_banner,
         ));
@@ -622,7 +628,7 @@ impl ChatWidget {
 
             if high_usage
                 && !self.rate_limit_switch_prompt_hidden()
-                && self.config.model != NUDGE_MODEL_SLUG
+                && self.model != NUDGE_MODEL_SLUG
                 && !matches!(
                     self.rate_limit_switch_prompt,
                     RateLimitSwitchPromptState::Shown
@@ -1262,6 +1268,7 @@ impl ChatWidget {
             skills,
             is_first_run,
             model_family,
+            resolved_model,
         } = common;
         let mut rng = rand::rng();
         let placeholder = EXAMPLE_PROMPTS[rng.random_range(0..EXAMPLE_PROMPTS.len())].to_string();
@@ -1282,11 +1289,12 @@ impl ChatWidget {
                 skills,
             }),
             active_cell: None,
-            config: config.clone(),
+            config,
             model_family,
+            model: resolved_model.clone(),
             auth_manager,
             models_manager,
-            session_header: SessionHeader::new(config.model),
+            session_header: SessionHeader::new(resolved_model),
             initial_user_message: create_initial_user_message(
                 initial_prompt.unwrap_or_default(),
                 initial_images,
@@ -1322,6 +1330,7 @@ impl ChatWidget {
         };
 
         widget.prefetch_rate_limits();
+        widget.config.model = Some(widget.model.clone());
 
         widget
     }
@@ -1344,6 +1353,7 @@ impl ChatWidget {
             feedback,
             skills,
             model_family,
+            resolved_model,
             ..
         } = common;
         let mut rng = rand::rng();
@@ -1367,11 +1377,12 @@ impl ChatWidget {
                 skills,
             }),
             active_cell: None,
-            config: config.clone(),
+            config,
             model_family,
+            model: resolved_model.clone(),
             auth_manager,
             models_manager,
-            session_header: SessionHeader::new(config.model),
+            session_header: SessionHeader::new(resolved_model),
             initial_user_message: create_initial_user_message(
                 initial_prompt.unwrap_or_default(),
                 initial_images,
@@ -1407,6 +1418,7 @@ impl ChatWidget {
         };
 
         widget.prefetch_rate_limits();
+        widget.config.model = Some(widget.model.clone());
 
         widget
     }
@@ -2031,6 +2043,7 @@ impl ChatWidget {
             self.rate_limit_snapshot.as_ref(),
             self.plan_type,
             Local::now(),
+            self.model.as_str(),
         ));
     }
     fn stop_rate_limit_poller(&mut self) {
@@ -2173,7 +2186,7 @@ impl ChatWidget {
     /// Open a popup to choose a quick auto model. Selecting "All models"
     /// opens the full picker with every available preset.
     pub(crate) fn open_model_popup(&mut self) {
-        let current_model = self.config.model.clone();
+        let current_model = self.model.clone();
         let presets: Vec<ModelPreset> =
             // todo(aibrahim): make this async function
             match self.models_manager.try_list_models() {
@@ -2280,7 +2293,7 @@ impl ChatWidget {
             return;
         }
 
-        let current_model = self.config.model.clone();
+        let current_model = self.model.clone();
         let mut items: Vec<SelectionItem> = Vec::new();
         for preset in presets.into_iter() {
             let description =
@@ -2409,7 +2422,7 @@ impl ChatWidget {
             .or(Some(default_effort));
 
         let model_slug = preset.model.to_string();
-        let is_current_model = self.config.model == preset.model;
+        let is_current_model = self.model == preset.model;
         let highlight_choice = if is_current_model {
             self.config.model_reasoning_effort
         } else {
@@ -2966,7 +2979,8 @@ impl ChatWidget {
     /// Set the model in the widget's config copy.
     pub(crate) fn set_model(&mut self, model: &str, model_family: ModelFamily) {
         self.session_header.set_model(model);
-        self.config.model = model.to_string();
+        self.model = model.to_string();
+        self.config.model = Some(self.model.clone());
         self.model_family = model_family;
     }
 
@@ -3244,6 +3258,10 @@ impl ChatWidget {
     /// runtime overrides applied via TUI, e.g., model or approval policy).
     pub(crate) fn config_ref(&self) -> &Config {
         &self.config
+    }
+
+    pub(crate) fn model_slug(&self) -> &str {
+        &self.model
     }
 
     pub(crate) fn clear_token_usage(&mut self) {

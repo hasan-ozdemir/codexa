@@ -132,6 +132,7 @@ async fn prompt_tools_are_consistent_across_requests() -> anyhow::Result<()> {
     } = test_codex()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
+            config.model = Some("gpt-5.1-codex-max".to_string());
         })
         .build(&server)
         .await?;

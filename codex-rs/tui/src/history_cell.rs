@@ -621,6 +621,7 @@ impl HistoryCell for SessionInfoCell {
 
 pub(crate) fn new_session_info(
     config: &Config,
+    requested_model: &str,
     event: SessionConfiguredEvent,
     is_first_event: bool,
 ) -> SessionInfoCell {
@@ -679,10 +680,10 @@ pub(crate) fn new_session_info(
         {
             parts.push(Box::new(tooltips));
         }
-        if config.model != model {
+        if requested_model != model {
             let lines = vec![
                 "model changed:".magenta().bold().into(),
-                format!("requested: {}", config.model).into(),
+                format!("requested: {requested_model}").into(),
                 format!("used: {model}").into(),
             ];
             parts.push(Box::new(PlainHistoryCell { lines }));
