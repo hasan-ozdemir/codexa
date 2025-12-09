@@ -1541,7 +1541,7 @@ mod tests {
         )
         .expect("config");
         if config.model.is_none() {
-            let default_model = ModelsManager::default_model_offline(&config);
+            let default_model = ModelsManager::get_model_offline(config.model.as_deref());
             config.model = Some(default_model);
         }
         config

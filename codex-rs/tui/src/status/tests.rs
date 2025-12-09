@@ -130,7 +130,7 @@ fn status_snapshot_includes_reasoning_details() {
     };
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
 
-    let model_slug = ModelsManager::default_model_offline(&config);
+    let model_slug = ModelsManager::get_model_offline(config.model.as_deref());
     let model_family = test_model_family(&model_slug, &config);
 
     let composite = new_status_output(
@@ -188,7 +188,7 @@ fn status_snapshot_includes_monthly_limit() {
     };
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
 
-    let model_slug = ModelsManager::default_model_offline(&config);
+    let model_slug = ModelsManager::get_model_offline(config.model.as_deref());
     let model_family = test_model_family(&model_slug, &config);
     let composite = new_status_output(
         &config,
@@ -233,7 +233,7 @@ fn status_snapshot_shows_unlimited_credits() {
         plan_type: None,
     };
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
-    let model_slug = ModelsManager::default_model_offline(&config);
+    let model_slug = ModelsManager::get_model_offline(config.model.as_deref());
     let model_family = test_model_family(&model_slug, &config);
     let composite = new_status_output(
         &config,
@@ -277,7 +277,7 @@ fn status_snapshot_shows_positive_credits() {
         plan_type: None,
     };
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
-    let model_slug = ModelsManager::default_model_offline(&config);
+    let model_slug = ModelsManager::get_model_offline(config.model.as_deref());
     let model_family = test_model_family(&model_slug, &config);
     let composite = new_status_output(
         &config,
@@ -321,7 +321,7 @@ fn status_snapshot_hides_zero_credits() {
         plan_type: None,
     };
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
-    let model_slug = ModelsManager::default_model_offline(&config);
+    let model_slug = ModelsManager::get_model_offline(config.model.as_deref());
     let model_family = test_model_family(&model_slug, &config);
     let composite = new_status_output(
         &config,
@@ -363,7 +363,7 @@ fn status_snapshot_hides_when_has_no_credits_flag() {
         plan_type: None,
     };
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
-    let model_slug = ModelsManager::default_model_offline(&config);
+    let model_slug = ModelsManager::get_model_offline(config.model.as_deref());
     let model_family = test_model_family(&model_slug, &config);
     let composite = new_status_output(
         &config,
@@ -405,7 +405,7 @@ fn status_card_token_usage_excludes_cached_tokens() {
         .single()
         .expect("timestamp");
 
-    let model_slug = ModelsManager::default_model_offline(&config);
+    let model_slug = ModelsManager::get_model_offline(config.model.as_deref());
     let model_family = test_model_family(&model_slug, &config);
     let composite = new_status_output(
         &config,
@@ -462,7 +462,7 @@ fn status_snapshot_truncates_in_narrow_terminal() {
     };
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
 
-    let model_slug = ModelsManager::default_model_offline(&config);
+    let model_slug = ModelsManager::get_model_offline(config.model.as_deref());
     let model_family = test_model_family(&model_slug, &config);
     let composite = new_status_output(
         &config,
@@ -508,7 +508,7 @@ fn status_snapshot_shows_missing_limits_message() {
         .single()
         .expect("timestamp");
 
-    let model_slug = ModelsManager::default_model_offline(&config);
+    let model_slug = ModelsManager::get_model_offline(config.model.as_deref());
     let model_family = test_model_family(&model_slug, &config);
     let composite = new_status_output(
         &config,
@@ -572,7 +572,7 @@ fn status_snapshot_includes_credits_and_limits() {
     };
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
 
-    let model_slug = ModelsManager::default_model_offline(&config);
+    let model_slug = ModelsManager::get_model_offline(config.model.as_deref());
     let model_family = test_model_family(&model_slug, &config);
     let composite = new_status_output(
         &config,
@@ -624,7 +624,7 @@ fn status_snapshot_shows_empty_limits_message() {
         .expect("timestamp");
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
 
-    let model_slug = ModelsManager::default_model_offline(&config);
+    let model_slug = ModelsManager::get_model_offline(config.model.as_deref());
     let model_family = test_model_family(&model_slug, &config);
     let composite = new_status_output(
         &config,
@@ -685,7 +685,7 @@ fn status_snapshot_shows_stale_limits_message() {
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
     let now = captured_at + ChronoDuration::minutes(20);
 
-    let model_slug = ModelsManager::default_model_offline(&config);
+    let model_slug = ModelsManager::get_model_offline(config.model.as_deref());
     let model_family = test_model_family(&model_slug, &config);
     let composite = new_status_output(
         &config,
@@ -750,7 +750,7 @@ fn status_snapshot_cached_limits_hide_credits_without_flag() {
     let rate_display = rate_limit_snapshot_display(&snapshot, captured_at);
     let now = captured_at + ChronoDuration::minutes(20);
 
-    let model_slug = ModelsManager::default_model_offline(&config);
+    let model_slug = ModelsManager::get_model_offline(config.model.as_deref());
     let model_family = test_model_family(&model_slug, &config);
     let composite = new_status_output(
         &config,
@@ -801,7 +801,7 @@ fn status_context_window_uses_last_usage() {
         .single()
         .expect("timestamp");
 
-    let model_slug = ModelsManager::default_model_offline(&config);
+    let model_slug = ModelsManager::get_model_offline(config.model.as_deref());
     let model_family = test_model_family(&model_slug, &config);
     let composite = new_status_output(
         &config,

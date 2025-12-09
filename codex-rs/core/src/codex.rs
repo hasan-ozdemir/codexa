@@ -182,9 +182,7 @@ impl Codex {
 
         let config = Arc::new(config);
         if config.features.enabled(Feature::RemoteModels)
-            && let Err(err) = models_manager
-                .refresh_available_models(&config.model_provider)
-                .await
+            && let Err(err) = models_manager.refresh_available_models().await
         {
             error!("failed to refresh available models: {err:?}");
         }
@@ -2601,7 +2599,7 @@ mod tests {
         )
         .expect("load default test config");
         let config = Arc::new(config);
-        let model = ModelsManager::default_model_offline(&config);
+        let model = ModelsManager::get_model_offline(config.model.as_deref());
         let model_family = ModelsManager::construct_model_family_offline(model.as_str(), &config);
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
@@ -2674,7 +2672,7 @@ mod tests {
         )
         .expect("load default test config");
         let config = Arc::new(config);
-        let model = ModelsManager::default_model_offline(&config);
+        let model = ModelsManager::get_model_offline(config.model.as_deref());
         let model_family = ModelsManager::construct_model_family_offline(model.as_str(), &config);
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
@@ -2853,7 +2851,7 @@ mod tests {
     ) -> OtelEventManager {
         OtelEventManager::new(
             conversation_id,
-            ModelsManager::default_model_offline(config).as_str(),
+            ModelsManager::get_model_offline(config.model.as_deref()).as_str(),
             model_family.slug.as_str(),
             None,
             Some("test@test.com".to_string()),
@@ -2878,7 +2876,7 @@ mod tests {
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
         let models_manager = Arc::new(ModelsManager::new(auth_manager.clone()));
         let model_family = ModelsManager::construct_model_family_offline(
-            ModelsManager::default_model_offline(&config).as_str(),
+            ModelsManager::get_model_offline(config.model.as_deref()).as_str(),
             &config,
         );
         let session_configuration = SessionConfiguration {
@@ -2965,7 +2963,7 @@ mod tests {
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
         let models_manager = Arc::new(ModelsManager::new(auth_manager.clone()));
         let model_family = ModelsManager::construct_model_family_offline(
-            ModelsManager::default_model_offline(&config).as_str(),
+            ModelsManager::get_model_offline(config.model.as_deref()).as_str(),
             &config,
         );
         let session_configuration = SessionConfiguration {

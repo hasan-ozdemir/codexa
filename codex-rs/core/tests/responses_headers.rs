@@ -61,7 +61,7 @@ async fn responses_stream_includes_subagent_header_on_review() {
     config.model_provider = provider.clone();
     let effort = config.model_reasoning_effort;
     let summary = config.model_reasoning_summary;
-    let model = ModelsManager::default_model_offline(&config);
+    let model = ModelsManager::get_model_offline(config.model.as_deref());
     config.model = Some(model.clone());
     let config = Arc::new(config);
 
@@ -153,7 +153,7 @@ async fn responses_stream_includes_subagent_header_on_other() {
     config.model_provider = provider.clone();
     let effort = config.model_reasoning_effort;
     let summary = config.model_reasoning_summary;
-    let model = ModelsManager::default_model_offline(&config);
+    let model = ModelsManager::get_model_offline(config.model.as_deref());
     config.model = Some(model.clone());
     let config = Arc::new(config);
 

@@ -347,7 +347,7 @@ async fn helpers_are_available_and_do_not_panic() {
     let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
     let tx = AppEventSender::new(tx_raw);
     let cfg = test_config();
-    let resolved_model = ModelsManager::default_model_offline(&cfg);
+    let resolved_model = ModelsManager::get_model_offline(cfg.model.as_deref());
     let model_family = ModelsManager::construct_model_family_offline(&resolved_model, &cfg);
     let conversation_manager = Arc::new(ConversationManager::with_auth(CodexAuth::from_api_key(
         "test",
@@ -387,7 +387,7 @@ fn make_chatwidget_manual(
     let mut cfg = test_config();
     let resolved_model = model_override
         .map(str::to_owned)
-        .unwrap_or_else(|| ModelsManager::default_model_offline(&cfg));
+        .unwrap_or_else(|| ModelsManager::get_model_offline(cfg.model.as_deref()));
     if let Some(model) = model_override {
         cfg.model = Some(model.to_string());
     }
