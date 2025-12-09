@@ -31,6 +31,15 @@ const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 const OPENAI_DEFAULT_MODEL: &str = "gpt-5.1-codex-max";
 const CODEX_AUTO_BALANCED_MODEL: &str = "codex-auto-balanced";
 
+#[derive(Default, Debug, PartialEq)]
+pub enum ModelsFetchingMode {
+    /// Fetch models from the remote API.
+    #[default]
+    Remote,
+    /// Fetch models from the local cache.
+    Local,
+}
+
 /// Coordinates remote model discovery plus cached metadata on disk.
 #[derive(Debug)]
 pub struct ModelsManager {
@@ -42,6 +51,7 @@ pub struct ModelsManager {
     codex_home: PathBuf,
     cache_ttl: Duration,
     provider: Option<ModelProviderInfo>,
+    fetching_mode: ModelsFetchingMode,
 }
 
 impl ModelsManager {
@@ -56,6 +66,7 @@ impl ModelsManager {
             codex_home,
             cache_ttl: DEFAULT_MODEL_CACHE_TTL,
             provider: ModelProviderInfo::get_chatgpt_provider().ok(),
+            fetching_mode: Default::default(),
         }
     }
 
@@ -71,11 +82,31 @@ impl ModelsManager {
             codex_home,
             cache_ttl: DEFAULT_MODEL_CACHE_TTL,
             provider: Some(provider),
+            fetching_mode: Default::default(),
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    /// Construct a manager scoped to the provided `AuthManager` with local fetching mode. Used for integration tests.
+    pub fn local_fetch(auth_manager: Arc<AuthManager>) -> Self {
+        let codex_home = auth_manager.codex_home().to_path_buf();
+        Self {
+            available_models: RwLock::new(builtin_model_presets(auth_manager.get_auth_mode())),
+            remote_models: RwLock::new(Vec::new()),
+            auth_manager,
+            etag: RwLock::new(None),
+            codex_home,
+            cache_ttl: DEFAULT_MODEL_CACHE_TTL,
+            provider: ModelProviderInfo::get_chatgpt_provider().ok(),
+            fetching_mode: ModelsFetchingMode::Local,
         }
     }
 
     /// Fetch the latest remote models, using the on-disk cache when still fresh.
     pub async fn refresh_available_models(&self) -> CoreResult<()> {
+        if self.fetching_mode == ModelsFetchingMode::Local {
+            return Ok(());
+        }
         if self.try_load_cache().await {
             return Ok(());
         }
