@@ -47,7 +47,7 @@ impl ConversationManager {
             conversations: Arc::new(RwLock::new(HashMap::new())),
             auth_manager: auth_manager.clone(),
             session_source,
-            models_manager: Arc::new(ModelsManager::new(auth_manager)),
+            models_manager: Arc::new(ModelsManager::new(auth_manager, None)),
         }
     }
 

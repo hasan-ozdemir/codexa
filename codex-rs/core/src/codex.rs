@@ -182,7 +182,7 @@ impl Codex {
 
         let config = Arc::new(config);
         if config.features.enabled(Feature::RemoteModels)
-            && let Err(err) = models_manager.refresh_available_models(None).await
+            && let Err(err) = models_manager.refresh_available_models().await
         {
             error!("failed to refresh available models: {err:?}");
         }
@@ -2876,7 +2876,7 @@ mod tests {
         let conversation_id = ConversationId::default();
         let auth_manager =
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
-        let models_manager = Arc::new(ModelsManager::new(auth_manager.clone()));
+        let models_manager = Arc::new(ModelsManager::new(auth_manager.clone(), None));
         let model_family = ModelsManager::construct_model_family_offline(
             ModelsManager::get_model_offline(config.model.as_deref()).as_str(),
             &config,
@@ -2963,7 +2963,7 @@ mod tests {
         let conversation_id = ConversationId::default();
         let auth_manager =
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
-        let models_manager = Arc::new(ModelsManager::new(auth_manager.clone()));
+        let models_manager = Arc::new(ModelsManager::new(auth_manager.clone(), None));
         let model_family = ModelsManager::construct_model_family_offline(
             ModelsManager::get_model_offline(config.model.as_deref()).as_str(),
             &config,

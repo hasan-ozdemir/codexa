@@ -208,6 +208,17 @@ impl ModelProviderInfo {
             .map(Duration::from_millis)
             .unwrap_or(Duration::from_millis(DEFAULT_STREAM_IDLE_TIMEOUT_MS))
     }
+    pub fn get_chatgpt_provider() -> Result<ModelProviderInfo, std::io::Error> {
+        built_in_model_providers()
+            .get("openai")
+            .cloned()
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Model provider `openai` not found",
+                )
+            })
+    }
 }
 
 pub const DEFAULT_LMSTUDIO_PORT: u16 = 1234;

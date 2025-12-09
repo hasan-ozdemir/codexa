@@ -18,7 +18,6 @@ use super::cache::ModelsCache;
 use crate::api_bridge::auth_provider_from_auth;
 use crate::api_bridge::map_api_error;
 use crate::auth::AuthManager;
-use crate::built_in_model_providers;
 use crate::config::Config;
 use crate::default_client::build_reqwest_client;
 use crate::error::Result as CoreResult;
@@ -42,11 +41,15 @@ pub struct ModelsManager {
     etag: RwLock<Option<String>>,
     codex_home: PathBuf,
     cache_ttl: Duration,
+    provider: Option<ModelProviderInfo>,
 }
 
 impl ModelsManager {
     /// Construct a manager scoped to the provided `AuthManager`.
-    pub fn new(auth_manager: Arc<AuthManager>) -> Self {
+    pub fn new(
+        auth_manager: Arc<AuthManager>,
+        provider_override: Option<ModelProviderInfo>,
+    ) -> Self {
         let codex_home = auth_manager.codex_home().to_path_buf();
         Self {
             available_models: RwLock::new(builtin_model_presets(auth_manager.get_auth_mode())),
@@ -55,20 +58,19 @@ impl ModelsManager {
             etag: RwLock::new(None),
             codex_home,
             cache_ttl: DEFAULT_MODEL_CACHE_TTL,
+            provider: provider_override.or_else(|| ModelProviderInfo::get_chatgpt_provider().ok()),
         }
     }
 
     /// Fetch the latest remote models, using the on-disk cache when still fresh.
-    pub async fn refresh_available_models(
-        &self,
-        provider_override: Option<&ModelProviderInfo>,
-    ) -> CoreResult<()> {
+    pub async fn refresh_available_models(&self) -> CoreResult<()> {
         if self.try_load_cache().await {
             return Ok(());
         }
 
-        let main_provider = self.get_chatgpt_provider()?;
-        let provider = provider_override.unwrap_or(&main_provider);
+        let provider = self.provider.as_ref().ok_or_else(|| {
+            crate::error::CodexErr::UnsupportedOperation("model provider not configured".into())
+        })?;
         let auth = self.auth_manager.auth();
         let api_provider = provider.to_api_provider(Some(AuthMode::ChatGPT))?;
         let api_auth = auth_provider_from_auth(auth.clone(), provider).await?;
@@ -90,7 +92,7 @@ impl ModelsManager {
     }
 
     pub async fn list_models(&self) -> Vec<ModelPreset> {
-        if let Err(err) = self.refresh_available_models(None).await {
+        if let Err(err) = self.refresh_available_models().await {
             error!("failed to refresh available models: {err}");
         }
         self.available_models.read().await.clone()
@@ -113,7 +115,7 @@ impl ModelsManager {
         if let Some(model) = model {
             return model.to_string();
         }
-        if let Err(err) = self.refresh_available_models(None).await {
+        if let Err(err) = self.refresh_available_models().await {
             error!("failed to refresh available models: {err}");
         }
         // if codex-auto-balanced exists & signed in with chatgpt mode, return it, otherwise return the default model
@@ -206,18 +208,6 @@ impl ModelsManager {
     fn cache_path(&self) -> PathBuf {
         self.codex_home.join(MODEL_CACHE_FILE)
     }
-
-    fn get_chatgpt_provider(&self) -> Result<ModelProviderInfo, std::io::Error> {
-        built_in_model_providers()
-            .get("openai")
-            .cloned()
-            .ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "Model provider `openai` not found",
-                )
-            })
-    }
 }
 
 /// Convert a client version string to a whole version string (e.g. "1.2.3-alpha.4" -> "1.2.3")
@@ -309,11 +299,11 @@ mod tests {
 
         let auth_manager =
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
-        let manager = ModelsManager::new(auth_manager);
         let provider = provider_for(server.uri());
+        let manager = ModelsManager::new(auth_manager, Some(provider));
 
         manager
-            .refresh_available_models(Some(&provider))
+            .refresh_available_models()
             .await
             .expect("refresh succeeds");
         let cached_remote = manager.remote_models.read().await.clone();
@@ -354,11 +344,11 @@ mod tests {
             false,
             AuthCredentialsStoreMode::File,
         ));
-        let manager = ModelsManager::new(auth_manager);
         let provider = provider_for(server.uri());
+        let manager = ModelsManager::new(auth_manager, Some(provider));
 
         manager
-            .refresh_available_models(Some(&provider))
+            .refresh_available_models()
             .await
             .expect("first refresh succeeds");
         assert_eq!(
@@ -369,7 +359,7 @@ mod tests {
 
         // Second call should read from cache and avoid the network.
         manager
-            .refresh_available_models(Some(&provider))
+            .refresh_available_models()
             .await
             .expect("cached refresh succeeds");
         assert_eq!(
@@ -403,11 +393,11 @@ mod tests {
             false,
             AuthCredentialsStoreMode::File,
         ));
-        let manager = ModelsManager::new(auth_manager);
         let provider = provider_for(server.uri());
+        let manager = ModelsManager::new(auth_manager, Some(provider));
 
         manager
-            .refresh_available_models(Some(&provider))
+            .refresh_available_models()
             .await
             .expect("initial refresh succeeds");
 
@@ -433,7 +423,7 @@ mod tests {
         .await;
 
         manager
-            .refresh_available_models(Some(&provider))
+            .refresh_available_models()
             .await
             .expect("second refresh succeeds");
         assert_eq!(
