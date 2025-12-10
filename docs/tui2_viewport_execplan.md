@@ -235,13 +235,21 @@ ported into `tui2`. Update it at the end of each iteration.
       - On wheel scroll, clears the current selection and delegates to `scroll_transcript` for ±3-line movement; on left-button down/drag/up, updates `TranscriptSelection` so click-drag selects and click-release on the same point clears.
     - Keeps tests and snapshots passing:
       - Updates test `App` constructors to initialize `transcript_selection` and re-runs `cargo test -p codex-tui2`, which passes without snapshot changes (selection is only visible when driven by input).
-  - [ ] `sxtvkutr ebd8c2aa` – `tui: make transcript selection-friendly while streaming`
+  - [x] `sxtvkutr ebd8c2aa` – `tui: make transcript selection-friendly while streaming`
+    - Makes mouse-driven transcript selection behave sensibly while responses are streaming:
+      - Detects when the chat widget is actively running a task and the transcript scroll mode is `ToBottom` (auto-follow).
+      - When the user begins a mouse selection (or drags an existing one) in that state, converts the scroll mode into an anchored `TranscriptScroll::Scrolled` position so streaming output no longer moves the viewport under the selection.
+    - Documents the interaction between streaming, scrolling, and selection in `tui2/src/app.rs`:
+      - Adds a doc comment to `handle_mouse_event` outlining wheel, click/drag, and streaming-aware selection behavior.
+      - Adds a doc comment to `scroll_transcript` and introduces `lock_transcript_scroll_to_current_view`, which flattens the transcript via `build_transcript_lines` and anchors scroll state to the current view top.
+    - Keeps the rest of the TUI2 surface unchanged:
+      - Wheel scrolling still clears selections and delegates to `scroll_transcript`, and existing snapshots remain valid because selection and streaming behavior only affect interactive navigation.
 
 - **Last ported viewport change**:
-  - `xvypqmyw 4abba3b1` – `feat: add mouse selection for transcript`
+  - `sxtvkutr ebd8c2aa` – `tui: make transcript selection-friendly while streaming`
 
 - **Next planned viewport change to port**:
-  - `sxtvkutr ebd8c2aa` – `tui: make transcript selection-friendly while streaming`
+  - `tosqkrlr b0021eae` – `fix: clear screen after suspend/overlay`
 
 - **Estimated iterations**
   - There are ~19 viewport commits after `rmntvvqt`. Many are tightly related
