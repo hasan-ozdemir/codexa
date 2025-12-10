@@ -690,7 +690,7 @@ pub async fn start_mock_server() -> MockServer {
 }
 
 /// Get all POST requests to `/responses` endpoints from the mock server.
-/// Filters out GET requests (e.g., `/models`) that don't have JSON bodies.
+/// Filters out GET requests (e.g., `/models`) .
 pub async fn get_responses_requests(server: &MockServer) -> Vec<wiremock::Request> {
     server
         .received_requests()
@@ -702,7 +702,7 @@ pub async fn get_responses_requests(server: &MockServer) -> Vec<wiremock::Reques
 }
 
 /// Get request bodies as JSON values from POST requests to `/responses` endpoints.
-/// Filters out GET requests (e.g., `/models`) that don't have JSON bodies.
+/// Filters out GET requests (e.g., `/models`) .
 pub async fn get_responses_request_bodies(server: &MockServer) -> Vec<Value> {
     get_responses_requests(server)
         .await
@@ -794,7 +794,7 @@ pub async fn mount_sse_sequence(server: &MockServer, bodies: Vec<String>) -> Res
 /// - Additionally, enforce symmetry: every `function_call`/`custom_tool_call`
 ///   in the `input` must have a matching output entry.
 fn validate_request_body_invariants(request: &wiremock::Request) {
-    // Skip GET requests (e.g., /models) that don't have JSON bodies
+    // Skip GET requests (e.g., /models)
     if request.method != "POST" || !request.url.path().ends_with("/responses") {
         return;
     }
