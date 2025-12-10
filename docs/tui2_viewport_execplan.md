@@ -216,7 +216,14 @@ ported into `tui2`. Update it at the end of each iteration.
   - [ ] `ppmpnvty 099b42e3` – `docs: document TUI viewport and history model`
     - Documentation-only change in the original TUI. TUI2 has its own execplan (`docs/tui2_viewport_execplan.md`); we may want to mirror or reference the upstream docs once the viewport work stabilizes.
 
-  - [ ] `tosqkrlr b0021eae` – `fix: clear screen after suspend/overlay`
+  - [x] `tosqkrlr b0021eae` – `fix: clear screen after suspend/overlay`
+    - Aligns the TUI2 suspend/resume path with the upstream clear-screen behavior:
+      - Updates `PreparedResumeAction::RealignViewport` in `codex-rs/tui2/src/tui/job_control.rs` so that, when resuming from a suspend that realigns the inline viewport, the terminal is explicitly cleared after the viewport area is restored.
+      - This mirrors the original TUI change that ensured stale overlay or pre-suspend content does not linger after the viewport is realigned, making the post-resume redraw predictable.
+    - Keeps TUI2’s simplified alt-screen and mouse handling intact:
+      - Does not reintroduce alternate-scroll; the alt-screen resume path already clears the terminal when restoring the overlay viewport, and this change focuses on the inline realign case.
+    - Exit transcript and suspend-history printing:
+      - The upstream commit also participates in the suspend-history plumbing used for exit transcripts; TUI2 will adopt those pieces when we port the dedicated exit transcript commits (`stsxnzvx`, `wlpmusny`, etc.), to keep the behavior changes grouped and easier to reason about.
   - [ ] `xlroryvs 87fd5fd5` – `fix: redraw TUI after standby`
   - [ ] `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
   - [ ] `wlpmusny b5138e63` – `feat: style exit transcript with ANSI`
