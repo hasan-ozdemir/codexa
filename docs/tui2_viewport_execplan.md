@@ -273,6 +273,7 @@ ported into `tui2`. Update it at the end of each iteration.
     - Keeps tests and snapshots passing:
       - Updates test `App` constructors to initialize `transcript_selection` and re-runs `cargo test -p codex-tui2`, which passes without snapshot changes (selection is only visible when driven by input).
   - [x] `sxtvkutr ebd8c2aa` – `tui: make transcript selection-friendly while streaming`
+    - Ported the selection model into TUI2 using content-relative transcript coordinates so mouse and keyboard scroll move the highlight with the underlying transcript content, fixing the regression where selection stayed pinned to screen rows after scrolling.
     - Makes mouse-driven transcript selection behave sensibly while responses are streaming:
       - Detects when the chat widget is actively running a task and the transcript scroll mode is `ToBottom` (auto-follow).
       - When the user begins a mouse selection (or drags an existing one) in that state, converts the scroll mode into an anchored `TranscriptScroll::Scrolled` position so streaming output no longer moves the viewport under the selection.
