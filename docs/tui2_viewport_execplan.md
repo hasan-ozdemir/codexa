@@ -166,11 +166,23 @@ ported into `tui2`. Update it at the end of each iteration.
       - `set_modes` / `restore` in `tui2/src/tui.rs` now disable alternate scroll and enable application mouse mode (`EnableMouseCapture` / `DisableMouseCapture`), ensuring scroll wheel events arrive as mouse events for the transcript viewport instead of being translated into Up/Down keys.
     - As with the previous commit, these changes remain in the existing app/tui modules rather than introducing new transcript-specific modules; we can factor this later if the viewport design stabilizes further.
 
+  - `xyqklwts 13ed4470` – `feat: add transcript scroll plumbing`
+    - Introduces a dedicated transcript scroll state in `codex-rs/tui2/src/app.rs`:
+      - Adds a `TranscriptScroll` enum with `ToBottom` and `Scrolled { cell_index, line_in_cell }` variants plus a `transcript_scroll` field on `App`, defaulting to `ToBottom`, so later viewport changes can distinguish between “pinned” and “scrolled” transcript positions.
+      - Updates the inline transcript renderer to remain purely height/width driven for now; scroll state is stored but not yet applied, keeping behavior identical while making the state available.
+    - Extends the TUI event plumbing in `codex-rs/tui2/src/tui.rs` and related screens:
+      - Adds a `Mouse(crossterm::event::MouseEvent)` variant to `TuiEvent` and wires `Event::Mouse` in `event_stream` through to it.
+      - Plumbs `TuiEvent::Mouse(_)` through `App::handle_tui_event` (currently as a no-op) and updates `model_migration.rs`, `onboarding/onboarding_screen.rs`, and `skill_error_prompt.rs` to handle the new variant without changing their behavior.
+    - Aligns `tui2` with the legacy TUI’s alt-screen usage:
+      - Wraps the main `App::run` call in `tui2/src/lib.rs`’s `run_ratatui_app` in `tui.enter_alt_screen()` / `tui.leave_alt_screen()`, so the combined chat + transcript viewport uses the full terminal while preserving normal scrollback on exit.
+    - Keeps existing tests green:
+      - Adjusts `App` test constructors in `tui2/src/app.rs` to initialize `transcript_scroll`, and re-runs `cargo test -p codex-tui2` to confirm behavior and snapshots remain unchanged.
+
 - **Last ported viewport change**:
-  - `ssupompv 01a18197` – `feat: wrap transcript and enable mouse scroll`
+  - `xyqklwts 13ed4470` – `feat: add transcript scroll plumbing`
 
 - **Next planned viewport change to port**:
-  - `xyqklwts 13ed4470` – `feat: add transcript scroll plumbing`
+  - `wzwouyux 99c761fa` – `feat: implement transcript scrolling statefully`
 
 - **Estimated iterations**
   - There are ~19 viewport commits after `rmntvvqt`. Many are tightly related

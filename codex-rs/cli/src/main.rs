@@ -26,6 +26,8 @@ use codex_tui::AppExitInfo;
 use codex_tui::Cli as TuiCli;
 use codex_tui::update_action::UpdateAction;
 use codex_tui2 as tui2;
+use codex_tui2::AppExitInfo as Tui2AppExitInfo;
+use codex_tui2::update_action::UpdateAction as Tui2UpdateAction;
 use owo_colors::OwoColorize;
 use std::path::PathBuf;
 use supports_color::Stream;
@@ -656,14 +658,60 @@ fn prepend_config_flags(
         .splice(0..0, cli_config_overrides.raw_overrides);
 }
 
+/// Convert a legacy `codex_tui` CLI invocation into the equivalent `codex_tui2` CLI.
+fn to_tui2_cli(cli: &TuiCli) -> tui2::Cli {
+    tui2::Cli {
+        prompt: cli.prompt.clone(),
+        images: cli.images.clone(),
+        resume_picker: cli.resume_picker,
+        resume_last: cli.resume_last,
+        resume_session_id: cli.resume_session_id.clone(),
+        resume_show_all: cli.resume_show_all,
+        model: cli.model.clone(),
+        oss: cli.oss,
+        oss_provider: cli.oss_provider.clone(),
+        config_profile: cli.config_profile.clone(),
+        sandbox_mode: cli.sandbox_mode.clone(),
+        approval_policy: cli.approval_policy.clone(),
+        full_auto: cli.full_auto,
+        dangerously_bypass_approvals_and_sandbox: cli.dangerously_bypass_approvals_and_sandbox,
+        cwd: cli.cwd.clone(),
+        web_search: cli.web_search,
+        add_dir: cli.add_dir.clone(),
+        config_overrides: cli.config_overrides.clone(),
+    }
+}
+
+/// Translate a `codex_tui2` update action into the legacy `codex_tui` type so the top-level CLI
+/// can handle post-exit updates uniformly regardless of which TUI frontend ran.
+fn from_tui2_update_action(action: Tui2UpdateAction) -> UpdateAction {
+    match action {
+        Tui2UpdateAction::NpmGlobalLatest => UpdateAction::NpmGlobalLatest,
+        Tui2UpdateAction::BunGlobalLatest => UpdateAction::BunGlobalLatest,
+        Tui2UpdateAction::BrewUpgrade => UpdateAction::BrewUpgrade,
+    }
+}
+
+/// Translate a `codex_tui2` exit payload into the legacy `codex_tui` type, preserving session
+/// usage and update semantics for the top-level CLI.
+fn from_tui2_exit_info(exit_info: Tui2AppExitInfo) -> AppExitInfo {
+    AppExitInfo {
+        token_usage: exit_info.token_usage,
+        conversation_id: exit_info.conversation_id,
+        update_action: exit_info.update_action.map(from_tui2_update_action),
+    }
+}
+
 /// Run the interactive Codex TUI, dispatching to either the legacy implementation or the
-/// experimental TUI v2 shim based on feature flags resolved from config.
+/// experimental TUI v2 implementation based on feature flags resolved from config.
 async fn run_interactive_tui(
     interactive: TuiCli,
     codex_linux_sandbox_exe: Option<PathBuf>,
 ) -> std::io::Result<AppExitInfo> {
     if is_tui2_enabled(&interactive).await? {
-        tui2::run_main(interactive, codex_linux_sandbox_exe).await
+        let tui2_cli = to_tui2_cli(&interactive);
+        let exit_info = tui2::run_main(tui2_cli, codex_linux_sandbox_exe).await?;
+        Ok(from_tui2_exit_info(exit_info))
     } else {
         codex_tui::run_main(interactive, codex_linux_sandbox_exe).await
     }
