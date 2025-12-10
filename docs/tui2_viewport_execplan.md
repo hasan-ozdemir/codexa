@@ -151,22 +151,25 @@ For each viewport commit after `rmntvvqt`:
 Use this section to keep track of how far the `joshka/viewport` work has been
 ported into `tui2`. Update it at the end of each iteration.
 
-- **Ported viewport changes so far**:
-  - `kzvkyynm 1590c445` – `feat: render transcript above composer`
+- **Viewport port checklist (from `main..joshka/viewport`)**
+  - [x] `rmntvvqt 83256977` – `refactor: tui.rs extract several pieces`
+    - Baseline refactor that already landed on `main` before `tui2` was created; the copied `tui2` crate includes this structure (FrameRequester, SuspendContext, etc.) by construction.
+
+  - [x] `kzvkyynm 1590c445` – `feat: render transcript above composer`
     - Ported into `codex-rs/tui2` by:
       - Teaching `App::handle_tui_event` to reserve a bottom-aligned chat area and render the transcript above it via a new `render_transcript_cells` helper (mirroring the original viewport behavior while keeping logic inside `app.rs` for now).
       - Updating `AppEvent::InsertHistoryCell` to append to `transcript_cells` and stop injecting vt100 history directly via `tui.insert_history_lines`, so the transcript is owned by Codex rather than the terminal scrollback.
       - Adjusting `Tui::draw` in `tui2/src/tui.rs` to stop using `scroll_region_up` or inserting `pending_history_lines` into the inline viewport, keeping the viewport stable while the transcript is rendered inside the TUI.
     - This preserves the existing “god-module” structure for now; future viewport commits may move transcript/viewport concerns into a dedicated module once the design stabilizes.
 
-  - `ssupompv 01a18197` – `feat: wrap transcript and enable mouse scroll`
+  - [x] `ssupompv 01a18197` – `feat: wrap transcript and enable mouse scroll`
     - Builds on the previous `kzvkyynm` port in `codex-rs/tui2/src/app.rs` and `codex-rs/tui2/src/tui.rs`:
       - `App::render_transcript_cells` now uses `word_wrap_lines_borrowed` from `tui2/src/wrapping.rs` to apply viewport-aware soft wrapping to transcript lines, while preserving the existing logic for spacing non-streaming history cells with a single blank line and avoiding gaps between streaming chunks.
       - The rendered transcript area is cleared before drawing and filled line-by-line, mirroring the original TUI’s wrapped transcript behavior above the composer.
       - `set_modes` / `restore` in `tui2/src/tui.rs` now disable alternate scroll and enable application mouse mode (`EnableMouseCapture` / `DisableMouseCapture`), ensuring scroll wheel events arrive as mouse events for the transcript viewport instead of being translated into Up/Down keys.
     - As with the previous commit, these changes remain in the existing app/tui modules rather than introducing new transcript-specific modules; we can factor this later if the viewport design stabilizes further.
 
-  - `xyqklwts 13ed4470` – `feat: add transcript scroll plumbing`
+  - [x] `xyqklwts 13ed4470` – `feat: add transcript scroll plumbing`
     - Introduces a dedicated transcript scroll state in `codex-rs/tui2/src/app.rs`:
       - Adds a `TranscriptScroll` enum with `ToBottom` and `Scrolled { cell_index, line_in_cell }` variants plus a `transcript_scroll` field on `App`, defaulting to `ToBottom`, so later viewport changes can distinguish between “pinned” and “scrolled” transcript positions.
       - Updates the inline transcript renderer to remain purely height/width driven for now; scroll state is stored but not yet applied, keeping behavior identical while making the state available.
@@ -178,7 +181,7 @@ ported into `tui2`. Update it at the end of each iteration.
     - Keeps existing tests green:
       - Adjusts `App` test constructors in `tui2/src/app.rs` to initialize `transcript_scroll`, and re-runs `cargo test -p codex-tui2` to confirm behavior and snapshots remain unchanged.
 
-  - `wzwouyux 99c761fa` – `feat: implement transcript scrolling statefully`
+  - [x] `wzwouyux 99c761fa` – `feat: implement transcript scrolling statefully`
     - Builds on the scroll plumbing by teaching TUI2 to maintain a stable transcript viewport when scrolled:
       - Refactors inline transcript rendering in `codex-rs/tui2/src/app.rs` to use a shared `build_transcript_lines` helper that returns both the flattened `Line` buffer and a parallel metadata vector mapping each line back to `(cell_index, line_in_cell)` or `None` for spacer lines.
       - Updates `render_transcript_cells` to:
@@ -190,7 +193,7 @@ ported into `tui2`. Update it at the end of each iteration.
     - Keeps tests and snapshots stable:
       - Ensures the default behavior remains pinned to bottom (`TranscriptScroll::ToBottom`) so non-scrolled sessions render as before, and re-runs `cargo test -p codex-tui2` to verify all 512 tests pass with no snapshot updates required.
 
-  - `eac367c410170684a2d0689daf6270477f639529` – `tui: lift bottom pane with short transcript`
+  - [x] `eac367c410170684a2d0689daf6270477f639529` – `tui: lift bottom pane with short transcript`
     - Adjusts the main inline layout so the chat composer sits directly beneath the rendered transcript when history is short:
       - Changes the `TuiEvent::Draw` path in `codex-rs/tui2/src/app.rs` to let `render_transcript_cells` return a `chat_top` row given the desired chat height, and positions the chat area starting at that row instead of always pegging it to the bottom of the terminal.
       - Clears only the region above the chat before drawing the transcript and fills any remaining rows *below* the chat to avoid stale content after layout changes.
@@ -200,11 +203,37 @@ ported into `tui2`. Update it at the end of each iteration.
     - Keeps snapshot behavior unchanged:
       - The default bottom-pinned behavior remains identical once the transcript fills the viewport; the change only affects vertical placement when history is short, and `cargo test -p codex-tui2` continues to pass with existing snapshots.
 
+  - [x] `7a814b470e2f60e16441834994a76ff2e4799d41` – `tui: restore mouse wheel scrolling in overlays`
+    - Restores mouse wheel scrolling inside full-screen overlays so they behave consistently with the inline transcript view:
+      - Extends `PagerView` in `codex-rs/tui2/src/pager_overlay.rs` with a `handle_mouse_scroll` helper that adjusts `scroll_offset` by a fixed 3-line step on `ScrollUp`/`ScrollDown` events and schedules a new frame via the shared `FrameRequester`.
+      - Wires `TuiEvent::Mouse` through both `TranscriptOverlay::handle_event` and `StaticOverlay::handle_event`, delegating to `PagerView::handle_mouse_scroll` so transcript, diff, and approval overlays all respond to wheel input.
+    - Simplifies terminal mode handling around alt-screen:
+      - Drops the custom `EnableAlternateScroll`/`DisableAlternateScroll` commands in `tui2/src/tui.rs` and uses only application mouse mode (`EnableMouseCapture` / `DisableMouseCapture`), matching the upstream TUI.
+      - Updates the suspend/resume path in `tui2/src/tui/job_control.rs` to enter/leave the alternate screen using only `EnterAlternateScreen` / `LeaveAlternateScreen`, keeping terminal behavior aligned while avoiding reliance on terminal-specific alternate scroll quirks.
+    - Keeps overlay snapshots and behavior stable:
+      - The scroll step matches the inline transcript (3 lines per wheel tick), and `cargo test -p codex-tui2` still passes with existing overlay snapshot tests.
+
+  - [ ] `ppmpnvty 099b42e3` – `docs: document TUI viewport and history model`
+    - Documentation-only change in the original TUI. TUI2 has its own execplan (`docs/tui2_viewport_execplan.md`); we may want to mirror or reference the upstream docs once the viewport work stabilizes.
+
+  - [ ] `tosqkrlr b0021eae` – `fix: clear screen after suspend/overlay`
+  - [ ] `xlroryvs 87fd5fd5` – `fix: redraw TUI after standby`
+  - [ ] `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
+  - [ ] `wlpmusny b5138e63` – `feat: style exit transcript with ANSI`
+  - [ ] `stsxnzvx 892a8c86` – `feat: print session transcript after TUI exit`
+  - [ ] `ovqzxktt 7bc3a11c` – `feat: add clipboard copy for transcript selection`
+  - [ ] `szttkmuz 08436aef` – `docs: describe streaming markdown wrapping`
+  - [ ] `ylmxkvop 27265cae` – `feat: show transcript scroll position in footer`
+  - [ ] `nlrrtzzr f9d71f35` – `feat: add keyboard shortcuts for transcript scroll`
+  - [ ] `qnqzrtwo 2f20caac` – `feat: surface transcript scroll and copy hints`
+  - [ ] `xvypqmyw 4abba3b1` – `feat: add mouse selection for transcript`
+  - [ ] `sxtvkutr ebd8c2aa` – `tui: make transcript selection-friendly while streaming`
+
 - **Last ported viewport change**:
-  - `eac367c410170684a2d0689daf6270477f639529` – `tui: lift bottom pane with short transcript`
+  - `7a814b470e2f60e16441834994a76ff2e4799d41` – `tui: restore mouse wheel scrolling in overlays`
 
 - **Next planned viewport change to port**:
-  - `7a814b470e2f60e16441834994a76ff2e4799d41` – `tui: restore mouse wheel scrolling in overlays`
+  - `xvypqmyw 4abba3b1` – `feat: add mouse selection for transcript`
 
 - **Estimated iterations**
   - There are ~19 viewport commits after `rmntvvqt`. Many are tightly related
