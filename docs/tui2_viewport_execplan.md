@@ -151,7 +151,7 @@ For each viewport commit after `rmntvvqt`:
 Use this section to keep track of how far the `joshka/viewport` work has been
 ported into `tui2`. Update it at the end of each iteration.
 
-- **Last ported viewport change**:
+- **Ported viewport changes so far**:
   - `kzvkyynm 1590c445` – `feat: render transcript above composer`
     - Ported into `codex-rs/tui2` by:
       - Teaching `App::handle_tui_event` to reserve a bottom-aligned chat area and render the transcript above it via a new `render_transcript_cells` helper (mirroring the original viewport behavior while keeping logic inside `app.rs` for now).
@@ -159,8 +159,18 @@ ported into `tui2`. Update it at the end of each iteration.
       - Adjusting `Tui::draw` in `tui2/src/tui.rs` to stop using `scroll_region_up` or inserting `pending_history_lines` into the inline viewport, keeping the viewport stable while the transcript is rendered inside the TUI.
     - This preserves the existing “god-module” structure for now; future viewport commits may move transcript/viewport concerns into a dedicated module once the design stabilizes.
 
-- **Next planned viewport change to port**:
   - `ssupompv 01a18197` – `feat: wrap transcript and enable mouse scroll`
+    - Builds on the previous `kzvkyynm` port in `codex-rs/tui2/src/app.rs` and `codex-rs/tui2/src/tui.rs`:
+      - `App::render_transcript_cells` now uses `word_wrap_lines_borrowed` from `tui2/src/wrapping.rs` to apply viewport-aware soft wrapping to transcript lines, while preserving the existing logic for spacing non-streaming history cells with a single blank line and avoiding gaps between streaming chunks.
+      - The rendered transcript area is cleared before drawing and filled line-by-line, mirroring the original TUI’s wrapped transcript behavior above the composer.
+      - `set_modes` / `restore` in `tui2/src/tui.rs` now disable alternate scroll and enable application mouse mode (`EnableMouseCapture` / `DisableMouseCapture`), ensuring scroll wheel events arrive as mouse events for the transcript viewport instead of being translated into Up/Down keys.
+    - As with the previous commit, these changes remain in the existing app/tui modules rather than introducing new transcript-specific modules; we can factor this later if the viewport design stabilizes further.
+
+- **Last ported viewport change**:
+  - `ssupompv 01a18197` – `feat: wrap transcript and enable mouse scroll`
+
+- **Next planned viewport change to port**:
+  - `xyqklwts 13ed4470` – `feat: add transcript scroll plumbing`
 
 - **Estimated iterations**
   - There are ~19 viewport commits after `rmntvvqt`. Many are tightly related
