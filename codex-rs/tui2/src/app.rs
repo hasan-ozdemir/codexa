@@ -8,6 +8,7 @@ use crate::diff_render::DiffSummary;
 use crate::exec_command::strip_bash_lc_and_escape;
 use crate::file_search::FileSearchManager;
 use crate::history_cell::HistoryCell;
+use crate::history_cell::UserHistoryCell;
 use crate::model_migration::ModelMigrationOutcome;
 use crate::model_migration::migration_copy_for_config;
 use crate::model_migration::run_model_migration_prompt;
@@ -64,6 +65,7 @@ use std::thread;
 use std::time::Duration;
 use tokio::select;
 use tokio::sync::mpsc::unbounded_channel;
+use unicode_width::UnicodeWidthStr;
 
 #[cfg(not(debug_assertions))]
 use crate::history_cell::UpdateAvailableHistoryCell;
@@ -927,13 +929,14 @@ impl App {
         }
     }
 
-    /// Build the flattened transcript lines for rendering and scrolling.
+    /// Build the flattened transcript lines for rendering, scrolling, and exit transcripts.
     ///
     /// Returns both the visible `Line` buffer and a parallel metadata vector
     /// that maps each line back to its originating `(cell_index, line_in_cell)`
     /// pair, or `None` for spacer lines. This allows the scroll state to anchor
     /// to a specific history cell even as new content arrives or the viewport
-    /// size changes.
+    /// size changes, and gives exit transcript renderers enough structure to
+    /// style user rows differently from agent rows.
     fn build_transcript_lines(
         cells: &[Arc<dyn HistoryCell>],
         width: u16,

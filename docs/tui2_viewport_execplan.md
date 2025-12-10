@@ -227,7 +227,14 @@ ported into `tui2`. Update it at the end of each iteration.
       - This mirrors the original TUI change that avoids leaving behind pre-standby artifacts when the inline viewport is shifted, ensuring the next draw starts from a clean buffer.
     - Keeps TUI2’s alt-screen behavior aligned with previous commits:
       - The `RestoreAltScreen` path continues to re-enter alt-screen and clear the terminal, but does not reintroduce alternate scroll; TUI2 remains on the simplified mouse/alt-screen model established in earlier viewport ports.
-  - [ ] `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
+  - [x] `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
+    - Introduces an exit transcript rendering helper in `codex-rs/tui2/src/app.rs` mirroring the upstream TUI behavior:
+      - Extends the App shutdown path to compute `session_lines` from `App::transcript_cells` using `build_transcript_lines`, plus an `is_user_cell` bitmap that identifies user history rows.
+      - Adds `render_lines_to_ansi`, which flattens `Line` spans into ANSI strings via `insert_history::write_spans` and, for user rows, pads the trailing background out to the full terminal width using `user_message_style` so prompts are visually aligned.
+    - Wires the padded transcript into `AppExitInfo`:
+      - On exit, TUI2 now clears the terminal and returns `session_lines` alongside token usage, conversation id, and update action so the CLI can print a consistent exit transcript.
+    - Builds on earlier viewport helpers:
+      - Reuses `build_transcript_lines` metadata to distinguish user vs. agent lines without changing the main inline transcript rendering, keeping interactive and post-exit views in sync.
   - [ ] `wlpmusny b5138e63` – `feat: style exit transcript with ANSI`
   - [ ] `stsxnzvx 892a8c86` – `feat: print session transcript after TUI exit`
   - [ ] `ovqzxktt 7bc3a11c` – `feat: add clipboard copy for transcript selection`
@@ -255,10 +262,10 @@ ported into `tui2`. Update it at the end of each iteration.
       - Wheel scrolling still clears selections and delegates to `scroll_transcript`, and existing snapshots remain valid because selection and streaming behavior only affect interactive navigation.
 
 - **Last ported viewport change**:
-  - `xlroryvs 87fd5fd5` – `fix: redraw TUI after standby`
+  - `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
 
 - **Next planned viewport change to port**:
-  - `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
+  - `wlpmusny b5138e63` – `feat: style exit transcript with ANSI`
 
 - **Estimated iterations**
   - There are ~19 viewport commits after `rmntvvqt`. Many are tightly related
