@@ -268,19 +268,14 @@ pub(crate) struct App {
 /// This tracks whether the transcript is pinned to the latest line or anchored
 /// at a specific cell/line pair so later viewport changes can implement
 /// scrollback without losing the notion of "bottom".
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 enum TranscriptScroll {
+    #[default]
     ToBottom,
     Scrolled {
         cell_index: usize,
         line_in_cell: usize,
     },
-}
-
-impl Default for TranscriptScroll {
-    fn default() -> Self {
-        TranscriptScroll::ToBottom
-    }
 }
 
 /// Content-relative selection within the inline transcript viewport.
@@ -680,10 +675,10 @@ impl App {
             let seg_count = word_wrap_line(line, opts).len();
             let is_user_row = meta
                 .get(idx)
-                .and_then(|entry| entry.as_ref())
+                .and_then(Option::as_ref)
                 .map(|(cell_index, _)| is_user_cell.get(*cell_index).copied().unwrap_or(false))
                 .unwrap_or(false);
-            wrapped_is_user_row.extend(std::iter::repeat(is_user_row).take(seg_count));
+            wrapped_is_user_row.extend(std::iter::repeat_n(is_user_row, seg_count));
             first = false;
         }
 
@@ -700,11 +695,12 @@ impl App {
             } => {
                 let mut anchor = None;
                 for (idx, entry) in meta.iter().enumerate() {
-                    if let Some((ci, li)) = entry {
-                        if *ci == cell_index && *li == line_in_cell {
-                            anchor = Some(idx);
-                            break;
-                        }
+                    if let Some((ci, li)) = entry
+                        && *ci == cell_index
+                        && *li == line_in_cell
+                    {
+                        anchor = Some(idx);
+                        break;
                     }
                 }
                 if let Some(idx) = anchor {
@@ -934,11 +930,12 @@ impl App {
             } => {
                 let mut anchor = None;
                 for (idx, entry) in meta.iter().enumerate() {
-                    if let Some((ci, li)) = entry {
-                        if *ci == cell_index && *li == line_in_cell {
-                            anchor = Some(idx);
-                            break;
-                        }
+                    if let Some((ci, li)) = entry
+                        && *ci == cell_index
+                        && *li == line_in_cell
+                    {
+                        anchor = Some(idx);
+                        break;
                     }
                 }
                 anchor.unwrap_or(max_start).min(max_start)
@@ -961,11 +958,8 @@ impl App {
             self.transcript_scroll = TranscriptScroll::ToBottom;
         } else {
             let mut anchor = None;
-            for idx in new_top..meta.len() {
-                if let Some((ci, li)) = meta[idx] {
-                    anchor = Some((ci, li));
-                    break;
-                }
+            if let Some((ci, li)) = meta.iter().skip(new_top).flatten().next() {
+                anchor = Some((*ci, *li));
             }
             if let Some((cell_index, line_in_cell)) = anchor {
                 self.transcript_scroll = TranscriptScroll::Scrolled {
@@ -1022,19 +1016,14 @@ impl App {
         };
 
         let mut anchor = None;
-        for idx in top_offset..meta.len() {
-            if let Some((cell_index, line_in_cell)) = meta[idx] {
-                anchor = Some((cell_index, line_in_cell));
-                break;
-            }
+        if let Some((cell_index, line_in_cell)) = meta.iter().skip(top_offset).flatten().next() {
+            anchor = Some((*cell_index, *line_in_cell));
         }
-        if anchor.is_none() {
-            for idx in (0..top_offset).rev() {
-                if let Some((cell_index, line_in_cell)) = meta[idx] {
-                    anchor = Some((cell_index, line_in_cell));
-                    break;
-                }
-            }
+        if anchor.is_none()
+            && let Some((cell_index, line_in_cell)) =
+                meta[..top_offset].iter().rev().flatten().next()
+        {
+            anchor = Some((*cell_index, *line_in_cell));
         }
 
         if let Some((cell_index, line_in_cell)) = anchor {
@@ -2027,9 +2016,10 @@ impl App {
                     if chat_height < height {
                         let transcript_height = height.saturating_sub(chat_height);
                         if transcript_height > 0 {
+                            let delta = -i32::from(transcript_height);
                             self.scroll_transcript(
                                 tui,
-                                -i32::try_from(transcript_height).unwrap_or(i32::MIN),
+                                delta,
                                 usize::from(transcript_height),
                                 width,
                             );
@@ -2050,9 +2040,10 @@ impl App {
                     if chat_height < height {
                         let transcript_height = height.saturating_sub(chat_height);
                         if transcript_height > 0 {
+                            let delta = i32::from(transcript_height);
                             self.scroll_transcript(
                                 tui,
-                                i32::try_from(transcript_height).unwrap_or(i32::MAX),
+                                delta,
                                 usize::from(transcript_height),
                                 width,
                             );
