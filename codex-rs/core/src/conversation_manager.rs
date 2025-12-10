@@ -1,5 +1,4 @@
 use crate::AuthManager;
-use crate::CodexAuth;
 use crate::codex::Codex;
 use crate::codex::CodexSpawnOk;
 use crate::codex::INITIAL_SUBMIT_ID;
@@ -52,13 +51,10 @@ impl ConversationManager {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    /// Construct with a dummy AuthManager containing the provided CodexAuth.
+    /// Construct with a dummy AuthManager for tests.
     /// Used for integration tests: should not be used by ordinary business logic.
-    pub fn with_auth(auth: CodexAuth) -> Self {
-        Self::new(
-            crate::AuthManager::from_auth_for_testing(auth),
-            SessionSource::Exec,
-        )
+    pub fn with_auth_for_testing(auth_manager: Arc<AuthManager>) -> Self {
+        Self::new(auth_manager, SessionSource::Exec)
     }
 
     pub fn session_source(&self) -> SessionSource {
