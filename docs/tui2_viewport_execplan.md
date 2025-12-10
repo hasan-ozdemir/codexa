@@ -217,14 +217,16 @@ ported into `tui2`. Update it at the end of each iteration.
     - Documentation-only change in the original TUI. TUI2 has its own execplan (`docs/tui2_viewport_execplan.md`); we may want to mirror or reference the upstream docs once the viewport work stabilizes.
 
   - [x] `tosqkrlr b0021eae` – `fix: clear screen after suspend/overlay`
-    - Aligns the TUI2 suspend/resume path with the upstream clear-screen behavior:
-      - Updates `PreparedResumeAction::RealignViewport` in `codex-rs/tui2/src/tui/job_control.rs` so that, when resuming from a suspend that realigns the inline viewport, the terminal is explicitly cleared after the viewport area is restored.
-      - This mirrors the original TUI change that ensured stale overlay or pre-suspend content does not linger after the viewport is realigned, making the post-resume redraw predictable.
-    - Keeps TUI2’s simplified alt-screen and mouse handling intact:
-      - Does not reintroduce alternate-scroll; the alt-screen resume path already clears the terminal when restoring the overlay viewport, and this change focuses on the inline realign case.
-    - Exit transcript and suspend-history printing:
-      - The upstream commit also participates in the suspend-history plumbing used for exit transcripts; TUI2 will adopt those pieces when we port the dedicated exit transcript commits (`stsxnzvx`, `wlpmusny`, etc.), to keep the behavior changes grouped and easier to reason about.
-  - [ ] `xlroryvs 87fd5fd5` – `fix: redraw TUI after standby`
+    - Tracks the upstream fix that ensures the terminal is left in a predictable state around suspend/overlay flows:
+      - TUI2 already clears the screen when re-entering alt-screen in `PreparedResumeAction::RestoreAltScreen`, matching the upstream behavior that avoids leaving stale overlay content behind.
+      - The suspend-history plumbing that prints buffered history lines on suspend (and feeds into exit transcript behavior) is intentionally deferred to the later exit-transcript commits (`stsxnzvx`, `wlpmusny`, etc.) so those changes can be ported as a coherent unit.
+    - No additional TUI2 code changes are required at this step beyond what is covered by the standby redraw fix below; the execplan records the mapping so we know this viewport-adjacent behavior has been audited.
+  - [x] `xlroryvs 87fd5fd5` – `fix: redraw TUI after standby`
+    - Makes the inline viewport resume path explicitly clear the screen after standby:
+      - Updates `PreparedResumeAction::RealignViewport` in `codex-rs/tui2/src/tui/job_control.rs` so that, when resuming from suspend with a `RealignInline` action, the terminal is cleared after the viewport area is restored.
+      - This mirrors the original TUI change that avoids leaving behind pre-standby artifacts when the inline viewport is shifted, ensuring the next draw starts from a clean buffer.
+    - Keeps TUI2’s alt-screen behavior aligned with previous commits:
+      - The `RestoreAltScreen` path continues to re-enter alt-screen and clear the terminal, but does not reintroduce alternate scroll; TUI2 remains on the simplified mouse/alt-screen model established in earlier viewport ports.
   - [ ] `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
   - [ ] `wlpmusny b5138e63` – `feat: style exit transcript with ANSI`
   - [ ] `stsxnzvx 892a8c86` – `feat: print session transcript after TUI exit`
@@ -253,10 +255,10 @@ ported into `tui2`. Update it at the end of each iteration.
       - Wheel scrolling still clears selections and delegates to `scroll_transcript`, and existing snapshots remain valid because selection and streaming behavior only affect interactive navigation.
 
 - **Last ported viewport change**:
-  - `sxtvkutr ebd8c2aa` – `tui: make transcript selection-friendly while streaming`
+  - `xlroryvs 87fd5fd5` – `fix: redraw TUI after standby`
 
 - **Next planned viewport change to port**:
-  - `tosqkrlr b0021eae` – `fix: clear screen after suspend/overlay`
+  - `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
 
 - **Estimated iterations**
   - There are ~19 viewport commits after `rmntvvqt`. Many are tightly related
