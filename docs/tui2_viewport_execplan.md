@@ -227,15 +227,18 @@ ported into `tui2`. Update it at the end of each iteration.
       - This mirrors the original TUI change that avoids leaving behind pre-standby artifacts when the inline viewport is shifted, ensuring the next draw starts from a clean buffer.
     - Keeps TUI2’s alt-screen behavior aligned with previous commits:
       - The `RestoreAltScreen` path continues to re-enter alt-screen and clear the terminal, but does not reintroduce alternate scroll; TUI2 remains on the simplified mouse/alt-screen model established in earlier viewport ports.
-  - [x] `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
-    - Introduces an exit transcript rendering helper in `codex-rs/tui2/src/app.rs` mirroring the upstream TUI behavior:
-      - Extends the App shutdown path to compute `session_lines` from `App::transcript_cells` using `build_transcript_lines`, plus an `is_user_cell` bitmap that identifies user history rows.
-      - Adds `render_lines_to_ansi`, which flattens `Line` spans into ANSI strings via `insert_history::write_spans` and, for user rows, pads the trailing background out to the full terminal width using `user_message_style` so prompts are visually aligned.
-    - Wires the padded transcript into `AppExitInfo`:
-      - On exit, TUI2 now clears the terminal and returns `session_lines` alongside token usage, conversation id, and update action so the CLI can print a consistent exit transcript.
-    - Builds on earlier viewport helpers:
-      - Reuses `build_transcript_lines` metadata to distinguish user vs. agent lines without changing the main inline transcript rendering, keeping interactive and post-exit views in sync.
-  - [ ] `wlpmusny b5138e63` – `feat: style exit transcript with ANSI`
+  - [ ] `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
+    - Not yet ported functionally to TUI2:
+      - In the original TUI, this commit extends the ANSI exit transcript renderer so user prompts are padded out to the full terminal width using `user_message_style`, making prompts visually aligned in scrollback.
+      - For TUI2, we plan to introduce an equivalent `render_lines_to_ansi` helper and `session_lines` plumbing once the full exit transcript feature (`stsxnzvx`) is ported, so padding, styling, and printing can be validated together.
+    - Current TUI2 state after nearby commits:
+      - `insert_history::write_spans` has been made `pub(crate)` (see `wlpmusny` below), giving us the same low-level vt100 emission path as the original TUI for when we hook up exit transcript rendering.
+  - [x] `wlpmusny b5138e63` – `feat: style exit transcript with ANSI`
+    - Prepares TUI2 to reuse the same ANSI styling pipeline as the original TUI when printing exit transcripts:
+      - Updates `codex-rs/tui2/src/insert_history.rs` to expose `write_spans` as `pub(crate)`, mirroring the upstream change in `tui/src/insert_history.rs` so other modules (like a future exit transcript renderer) can stream styled spans into a vt100 buffer.
+      - Keeps the actual exit transcript printing and per-row styling deferred to `stsxnzvx`/`kpxulmqr`, where we will introduce `render_lines_to_ansi` and wire `session_lines` into TUI2’s `AppExitInfo`.
+    - No user-visible behavior change yet:
+      - The interactive TUI2 viewport and CLI output remain unchanged; this step is about matching the original TUI’s internal extension points so later exit transcript work can layer cleanly on top.
   - [ ] `stsxnzvx 892a8c86` – `feat: print session transcript after TUI exit`
   - [ ] `ovqzxktt 7bc3a11c` – `feat: add clipboard copy for transcript selection`
   - [ ] `szttkmuz 08436aef` – `docs: describe streaming markdown wrapping`
@@ -262,10 +265,10 @@ ported into `tui2`. Update it at the end of each iteration.
       - Wheel scrolling still clears selections and delegates to `scroll_transcript`, and existing snapshots remain valid because selection and streaming behavior only affect interactive navigation.
 
 - **Last ported viewport change**:
-  - `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
+  - `wlpmusny b5138e63` – `feat: style exit transcript with ANSI`
 
 - **Next planned viewport change to port**:
-  - `wlpmusny b5138e63` – `feat: style exit transcript with ANSI`
+  - `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
 
 - **Estimated iterations**
   - There are ~19 viewport commits after `rmntvvqt`. Many are tightly related
