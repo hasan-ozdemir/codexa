@@ -1265,6 +1265,8 @@ impl ChatWidget {
             model_family,
         } = common;
         let model_slug = model_family.get_model_slug().to_string();
+        let mut config = config;
+        config.model = Some(model_slug.clone());
         let mut rng = rand::rng();
         let placeholder = EXAMPLE_PROMPTS[rng.random_range(0..EXAMPLE_PROMPTS.len())].to_string();
         let codex_op_tx = spawn_agent(config.clone(), app_event_tx.clone(), conversation_manager);
