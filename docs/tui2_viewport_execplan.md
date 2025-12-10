@@ -256,7 +256,7 @@ ported into `tui2`. Update it at the end of each iteration.
     - Mirrors the original streaming wrapping design note for TUI2:
       - Adds `codex-rs/tui2/src/streaming_wrapping_design.md`, summarizing where streaming markdown is implemented in TUI2 (`markdown_stream`, `chatwidget`, `history_cell`, `wrapping`) and how it shares the same “pre‑wrap vs. reflow” tradeoffs as the legacy TUI.
       - Documents that TUI2 currently stays close to the legacy behavior while viewport work is being ported, and points to `tui2/src/wrapping.rs` as the primary abstraction for viewport‑aware wrapping.
-  - [ ] `ylmxkvop 27265cae` – `feat: show transcript scroll position in footer`
+  - [x] `ylmxkvop 27265cae` – `feat: show transcript scroll position in footer`
   - [ ] `nlrrtzzr f9d71f35` – `feat: add keyboard shortcuts for transcript scroll`
   - [ ] `qnqzrtwo 2f20caac` – `feat: surface transcript scroll and copy hints`
   - [x] `xvypqmyw 4abba3b1` – `feat: add mouse selection for transcript`
