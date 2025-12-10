@@ -1288,7 +1288,7 @@ impl ChatWidget {
             model_family,
             auth_manager,
             models_manager,
-            session_header: SessionHeader::new(model_slug.clone()),
+            session_header: SessionHeader::new(model_slug),
             initial_user_message: create_initial_user_message(
                 initial_prompt.unwrap_or_default(),
                 initial_images,
@@ -1374,7 +1374,7 @@ impl ChatWidget {
             model_family,
             auth_manager,
             models_manager,
-            session_header: SessionHeader::new(model_slug.clone()),
+            session_header: SessionHeader::new(model_slug),
             initial_user_message: create_initial_user_message(
                 initial_prompt.unwrap_or_default(),
                 initial_images,
