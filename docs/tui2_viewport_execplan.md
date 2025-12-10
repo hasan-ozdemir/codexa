@@ -258,7 +258,7 @@ ported into `tui2`. Update it at the end of each iteration.
       - Documents that TUI2 currently stays close to the legacy behavior while viewport work is being ported, and points to `tui2/src/wrapping.rs` as the primary abstraction for viewport‑aware wrapping.
   - [x] `ylmxkvop 27265cae` – `feat: show transcript scroll position in footer`
   - [x] `nlrrtzzr f9d71f35` – `feat: add keyboard shortcuts for transcript scroll`
-  - [ ] `qnqzrtwo 2f20caac` – `feat: surface transcript scroll and copy hints`
+  - [x] `qnqzrtwo 2f20caac` – `feat: surface transcript scroll and copy hints`
   - [x] `xvypqmyw 4abba3b1` – `feat: add mouse selection for transcript`
     - Adds inline transcript selection tracking and rendering in `codex-rs/tui2/src/app.rs`:
       - Introduces a `TranscriptSelection` struct on `App` with `anchor` and `head` positions, and uses it to track a mouse-driven selection region within the transcript area.
