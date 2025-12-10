@@ -583,6 +583,24 @@ impl ExtensionHost {
         self.history_jump(|| self.history_next())
     }
 
+    pub(crate) fn set_session_rollout_path(&self, path: PathBuf) {
+        let mtime = path.metadata().ok().and_then(|m| m.modified().ok());
+        *self.session_path.borrow_mut() = Some(path.clone());
+        if let Some(ts) = mtime {
+            *self.last_seed_mtime.borrow_mut() = Some(ts);
+        }
+        let entries = Self::read_user_messages(&path);
+        let payload = json!({ "payload": { "entries": entries, "session_path": path } });
+        if let Some(bridge) = &self.bridge
+            && let Ok(mut guard) = bridge.lock()
+        {
+            let _ = guard.send_request("history_seed", payload.clone(), &self.log_path);
+        }
+        for script in &self.scripts {
+            let _ = Self::run_script(script, "history_seed", payload.clone(), &self.log_path);
+        }
+    }
+
     fn history_jump<F>(&self, mut step: F) -> Option<String>
     where
         F: FnMut() -> Option<String>,
@@ -1151,6 +1169,9 @@ impl ExtensionHost {
     }
 
     fn maybe_seed_history(&self) {
+        if self.session_path.borrow().is_some() {
+            return;
+        }
         let Some(seed) = Self::load_recent_history() else {
             self.log_event("No history file found");
             return;

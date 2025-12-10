@@ -365,6 +365,10 @@ impl ChatComposer {
         }
     }
 
+    pub(crate) fn set_session_rollout_path(&mut self, path: PathBuf) {
+        self.extension_host.set_session_rollout_path(path);
+    }
+
     /// Override the footer hint items displayed beneath the composer. Passing
     /// `None` restores the default shortcut footer.
     pub(crate) fn set_footer_hint_override(&mut self, items: Option<Vec<(String, String)>>) {

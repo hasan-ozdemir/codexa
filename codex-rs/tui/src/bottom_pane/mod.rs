@@ -133,6 +133,10 @@ impl BottomPane {
         }
     }
 
+    pub fn set_session_rollout_path(&mut self, path: PathBuf) {
+        self.composer.set_session_rollout_path(path);
+    }
+
     pub fn status_widget(&self) -> Option<&StatusIndicatorWidget> {
         self.status.as_ref()
     }

@@ -3,6 +3,7 @@
 // alternate‑screen mode starts; that file opts‑out locally via `allow`.
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 #![deny(clippy::disallowed_methods)]
+use crate::resume_picker::folder_based_sessions_enabled;
 use additional_dirs::add_dir_warning_message;
 use app::App;
 pub use app::AppExitInfo;
@@ -23,6 +24,9 @@ use codex_core::config::resolve_oss_provider;
 use codex_core::find_conversation_path_by_id_str;
 use codex_core::get_platform_sandbox;
 use codex_core::protocol::AskForApproval;
+use codex_core::rollout::path_utils::paths_match as core_paths_match;
+use codex_core::rollout::path_utils::slug_for_cwd;
+use codex_core::rollout::path_utils::slug_from_rollout_path;
 use codex_protocol::config_types::SandboxMode;
 use codex_protocol::protocol::SessionMetaLine;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
@@ -42,33 +46,7 @@ fn session_cwd(item: &ConversationItem) -> Option<std::path::PathBuf> {
 }
 
 fn paths_match(a: &std::path::Path, b: &std::path::Path) -> bool {
-    fn norm_str(p: &std::path::Path) -> String {
-        let s = p
-            .canonicalize()
-            .unwrap_or_else(|_| p.to_path_buf())
-            .to_string_lossy()
-            .to_string();
-        s.replace('\\', "/")
-            .trim_start_matches("//?/")
-            .trim_start_matches("//?/")
-            .trim_start_matches("\\\\?\\")
-            .trim_start_matches("\\\\?/")
-            .to_ascii_lowercase()
-    }
-
-    #[cfg(windows)]
-    {
-        let na = norm_str(a);
-        let nb = norm_str(b);
-        na == nb
-    }
-
-    #[cfg(not(windows))]
-    {
-        let na = norm_str(a);
-        let nb = norm_str(b);
-        na == nb
-    }
+    core_paths_match(a, b)
 }
 
 async fn latest_session_for_cwd(
@@ -92,7 +70,21 @@ async fn latest_session_for_cwd(
 
         if let Some(matched) = page.items.iter().find(|it| {
             if let Some(ref cwd) = cwd_filter {
-                session_cwd(it).is_some_and(|p| paths_match(&p, cwd))
+                let cwd_match = session_cwd(it).is_some_and(|p| paths_match(&p, cwd));
+                if !cwd_match {
+                    return false;
+                }
+                if folder_based_sessions_enabled()
+                    && let Some(slug) = slug_from_rollout_path(&it.path)
+                {
+                    let expected = slug_for_cwd(cwd);
+                    if slug.eq_ignore_ascii_case(&expected) {
+                        return true;
+                    }
+                    // Backward-compat: allow legacy slugs that don't match the current
+                    // hashing scheme as long as the recorded cwd matches.
+                }
+                true
             } else {
                 true
             }
@@ -722,9 +714,17 @@ fn should_show_login_screen(login_status: LoginStatus, config: &Config) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use codex_core::SessionMeta;
     use codex_core::config::ConfigOverrides;
     use codex_core::config::ConfigToml;
     use codex_core::config::ProjectConfig;
+    use codex_protocol::ConversationId;
+    use codex_protocol::protocol::EventMsg;
+    use codex_protocol::protocol::RolloutItem;
+    use codex_protocol::protocol::RolloutLine;
+    use codex_protocol::protocol::SessionMetaLine;
+    use codex_protocol::protocol::SessionSource;
+    use codex_protocol::protocol::UserMessageEvent;
     use serial_test::serial;
     use tempfile::TempDir;
 
@@ -801,6 +801,59 @@ mod tests {
             !should_show,
             "Trust prompt should not be shown for projects explicitly marked as untrusted"
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn latest_session_allows_legacy_slug_dirs() -> color_eyre::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let codex_home = temp_dir.path().to_path_buf();
+        let cwd = codex_home.join("workspace");
+        std::fs::create_dir_all(&cwd)?;
+
+        let mut rollout_dir = codex_home.join("sessions");
+        rollout_dir.push("2025");
+        rollout_dir.push("12");
+        rollout_dir.push("09");
+        rollout_dir.push("legacy-slug");
+        std::fs::create_dir_all(&rollout_dir)?;
+
+        let conversation_id = ConversationId::new();
+        let path = rollout_dir.join(format!(
+            "rollout-2025-12-09T00-00-00-{conversation_id}.jsonl"
+        ));
+        let meta = RolloutLine {
+            timestamp: "2025-12-09T00:00:00Z".to_string(),
+            item: RolloutItem::SessionMeta(SessionMetaLine {
+                meta: SessionMeta {
+                    id: conversation_id,
+                    timestamp: "2025-12-09T00:00:00Z".to_string(),
+                    cwd: cwd.clone(),
+                    originator: "codex_cli_rs".to_string(),
+                    cli_version: "0.0.0".to_string(),
+                    instructions: None,
+                    source: SessionSource::Cli,
+                    model_provider: Some("openai".to_string()),
+                },
+                git: None,
+            }),
+        };
+        let user_event = RolloutLine {
+            timestamp: "2025-12-09T00:00:01Z".to_string(),
+            item: RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
+                message: "hi".to_string(),
+                images: None,
+            })),
+        };
+
+        let mut file = std::fs::File::create(&path)?;
+        serde_json::to_writer(&mut file, &meta)?;
+        file.write_all(b"\n")?;
+        serde_json::to_writer(&mut file, &user_event)?;
+        file.write_all(b"\n")?;
+
+        let found = latest_session_for_cwd(&codex_home, "openai", Some(cwd.clone())).await?;
+        assert_eq!(found.as_deref(), Some(path.as_path()));
         Ok(())
     }
 }

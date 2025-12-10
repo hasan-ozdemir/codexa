@@ -11,6 +11,9 @@ use codex_core::ConversationsPage;
 use codex_core::Cursor;
 use codex_core::INTERACTIVE_SESSION_SOURCES;
 use codex_core::RolloutRecorder;
+use codex_core::rollout::path_utils::paths_match as core_paths_match;
+use codex_core::rollout::path_utils::slug_for_cwd;
+use codex_core::rollout::path_utils::slug_from_rollout_path;
 use codex_protocol::items::TurnItem;
 use color_eyre::eyre::Result;
 use crossterm::event::KeyCode;
@@ -34,6 +37,7 @@ use crate::tui::FrameRequester;
 use crate::tui::Tui;
 use crate::tui::TuiEvent;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::SessionMetaLine;
 
 const PAGE_SIZE: usize = 25;
@@ -85,7 +89,6 @@ pub async fn run_resume_picker(
         let original = filter_cwd.clone();
         filter_cwd.and_then(|p| p.canonicalize().ok()).or(original)
     };
-
 
     let loader_tx = bg_tx.clone();
     let page_loader: PageLoader = Arc::new(move |request: PageLoadRequest| {
@@ -456,6 +459,16 @@ impl PickerState {
                 .cloned()
                 .collect();
         }
+        if self.filtered_rows.is_empty()
+            && !self.all_rows.is_empty()
+            && self.filter_cwd.is_some()
+            && !self.show_all
+        {
+            // If the cwd filter produced no matches, fall back to showing all
+            // sessions so the picker is never blank.
+            self.filtered_rows = self.all_rows.clone();
+            self.show_all = true;
+        }
         if self.selected >= self.filtered_rows.len() {
             self.selected = self.filtered_rows.len().saturating_sub(1);
         }
@@ -476,7 +489,20 @@ impl PickerState {
         let Some(row_cwd) = row.cwd.as_ref() else {
             return false;
         };
-        paths_match(row_cwd, filter_cwd)
+        if !paths_match(row_cwd, filter_cwd) {
+            return false;
+        }
+        if folder_based_sessions_enabled()
+            && let Some(slug) = slug_from_rollout_path(&row.path)
+        {
+            let expected = slug_for_cwd(filter_cwd);
+            if slug.eq_ignore_ascii_case(&expected) {
+                return true;
+            }
+            // Backward-compat: allow legacy slugs that don't match the current
+            // hashing scheme as long as the recorded cwd matches.
+        }
+        true
     }
 
     fn set_query(&mut self, new_query: String) {
@@ -674,33 +700,7 @@ fn extract_session_meta_from_head(head: &[serde_json::Value]) -> (Option<PathBuf
 }
 
 fn paths_match(a: &Path, b: &Path) -> bool {
-    fn norm_str(p: &Path) -> String {
-        let s = p
-            .canonicalize()
-            .unwrap_or_else(|_| p.to_path_buf())
-            .to_string_lossy()
-            .to_string();
-        s.replace('\\', "/")
-            .trim_start_matches("//?/")
-            .trim_start_matches("//?/")
-            .trim_start_matches("\\\\?\\")
-            .trim_start_matches("\\\\?/")
-            .to_ascii_lowercase()
-    }
-
-    #[cfg(windows)]
-    {
-        let na = norm_str(a);
-        let nb = norm_str(b);
-        na == nb
-    }
-
-    #[cfg(not(windows))]
-    {
-        let na = norm_str(a);
-        let nb = norm_str(b);
-        na == nb
-    }
+    core_paths_match(a, b)
 }
 
 fn parse_timestamp_str(ts: &str) -> Option<DateTime<Utc>> {
@@ -743,12 +743,19 @@ fn extract_timestamp(value: &serde_json::Value) -> Option<DateTime<Utc>> {
 }
 
 fn preview_from_head(head: &[serde_json::Value]) -> Option<String> {
-    head.iter()
-        .filter_map(|value| serde_json::from_value::<ResponseItem>(value.clone()).ok())
-        .find_map(|item| match codex_core::parse_turn_item(&item) {
-            Some(TurnItem::UserMessage(user)) => Some(user.message()),
-            _ => None,
-        })
+    for value in head {
+        if let Ok(item) = serde_json::from_value::<ResponseItem>(value.clone()) {
+            if let Some(TurnItem::UserMessage(user)) = codex_core::parse_turn_item(&item) {
+                return Some(user.message());
+            }
+        }
+        if let Ok(EventMsg::UserMessage(user)) = serde_json::from_value::<EventMsg>(value.clone()) {
+            if !user.message.is_empty() {
+                return Some(user.message);
+            }
+        }
+    }
+    None
 }
 
 fn draw_picker(tui: &mut Tui, state: &PickerState) -> std::io::Result<()> {
@@ -1154,6 +1161,43 @@ mod tests {
         }
     }
 
+    #[test]
+    fn row_filter_allows_legacy_slugs_when_cwd_matches() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let codex_home = tempdir.path().to_path_buf();
+        let cwd = codex_home.join("workspace");
+        std::fs::create_dir_all(&cwd).expect("create cwd");
+
+        let mut rollout_dir = codex_home.clone();
+        rollout_dir.push("2025");
+        rollout_dir.push("12");
+        rollout_dir.push("09");
+        rollout_dir.push("legacy-slug");
+        std::fs::create_dir_all(&rollout_dir).expect("create rollout dir");
+
+        let row = Row {
+            path: rollout_dir
+                .join("rollout-2025-12-09T00-00-00-00000000-0000-0000-0000-000000000000.jsonl"),
+            preview: "hi".to_string(),
+            created_at: None,
+            updated_at: None,
+            cwd: Some(cwd.clone()),
+            git_branch: None,
+        };
+
+        let loader: PageLoader = Arc::new(|_| {});
+        let state = PickerState::new(
+            codex_home,
+            FrameRequester::test_dummy(),
+            loader,
+            String::from("openai"),
+            false,
+            Some(cwd),
+        );
+
+        assert!(state.row_matches_filter(&row));
+    }
+
     fn block_on_future<F: Future<Output = T>, T>(future: F) -> T {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -1319,7 +1363,7 @@ mod tests {
     fn resume_picker_screen_snapshot() {
         use crate::custom_terminal::Terminal;
         use crate::test_backend::VT100Backend;
-        use uuid::Uuid;
+        use codex_protocol::ConversationId;
 
         // Create real rollout files so the snapshot uses the actual listing pipeline.
         let tempdir = tempfile::tempdir().expect("tempdir");
@@ -1338,7 +1382,7 @@ mod tests {
             let filename = format!(
                 "rollout-{}-{}.jsonl",
                 ts.format("%Y-%m-%dT%H-%M-%S"),
-                Uuid::new_v4()
+                ConversationId::new()
             );
             let path = dir.join(filename);
             let meta = serde_json::json!({
@@ -1346,7 +1390,7 @@ mod tests {
                 "item": {
                     "SessionMeta": {
                         "meta": {
-                            "id": Uuid::new_v4(),
+                            "id": ConversationId::new(),
                             "timestamp": ts.to_rfc3339(),
                             "cwd": cwd,
                             "originator": "user",
