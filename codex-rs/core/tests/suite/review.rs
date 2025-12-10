@@ -548,7 +548,9 @@ async fn review_input_isolated_from_parent_history() {
 
     // Assert the request `input` contains the environment context followed by the user review prompt.
     let requests = get_responses_requests(&server).await;
-    let request = requests.first().expect("expected POST request to /responses");
+    let request = requests
+        .first()
+        .expect("expected POST request to /responses");
     let body = request.body_json::<serde_json::Value>().unwrap();
     let input = body["input"].as_array().expect("input array");
     assert_eq!(
