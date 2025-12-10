@@ -305,6 +305,7 @@ struct RemoteModelsHarness {
     conversation_manager: Arc<ConversationManager>,
 }
 
+// todo(aibrahim): move this to with_model_provier in test_codex
 async fn build_remote_models_harness<F>(
     server: &MockServer,
     mutate_config: F,
