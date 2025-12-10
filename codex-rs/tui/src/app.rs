@@ -708,7 +708,6 @@ impl App {
                     .construct_model_family(&model, &self.config)
                     .await;
                 self.chat_widget.set_model(&model, model_family);
-                self.config.model = Some(model.clone());
                 self.current_model = model;
             }
             AppEvent::OpenReasoningPopup { model } => {
