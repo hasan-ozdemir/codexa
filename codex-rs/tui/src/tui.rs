@@ -172,6 +172,8 @@ pub struct Tui {
     alt_screen_active: Arc<AtomicBool>,
     // True when terminal/tab is focused; updated internally from crossterm events
     terminal_focused: Arc<AtomicBool>,
+    // When true, crossterm events are not polled.
+    events_paused: Arc<AtomicBool>,
     enhanced_keys_supported: bool,
 }
 
@@ -197,6 +199,7 @@ impl Tui {
             suspend_context: SuspendContext::new(),
             alt_screen_active: Arc::new(AtomicBool::new(false)),
             terminal_focused: Arc::new(AtomicBool::new(true)),
+            events_paused: Arc::new(AtomicBool::new(false)),
             enhanced_keys_supported,
         }
     }
@@ -207,6 +210,16 @@ impl Tui {
 
     pub fn enhanced_keys_supported(&self) -> bool {
         self.enhanced_keys_supported
+    }
+
+    /// Pause crossterm event polling. Idempotent.
+    pub fn pause_events(&self) {
+        self.events_paused.store(true, Ordering::Relaxed);
+    }
+
+    /// Resume crossterm event polling. Idempotent.
+    pub fn resume_events(&self) {
+        self.events_paused.store(false, Ordering::Relaxed);
     }
 
     pub fn is_alt_screen_active(&self) -> bool {
@@ -237,8 +250,24 @@ impl Tui {
         let alt_screen_active = self.alt_screen_active.clone();
 
         let terminal_focused = self.terminal_focused.clone();
+        let events_paused = self.events_paused.clone();
         let event_stream = async_stream::stream! {
             loop {
+                // If events are paused, we only process draw events.
+                if events_paused.load(Ordering::Relaxed) {
+                    match draw_rx.recv().await {
+                        Ok(_) => {
+                            yield TuiEvent::Draw;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            yield TuiEvent::Draw;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            break;
+                        }
+                    }
+                    continue;
+                }
                 select! {
                     Some(Ok(event)) = crossterm_events.next() => {
                         match event {
