@@ -109,7 +109,10 @@ async fn run_request(input: Vec<ResponseItem>) -> Value {
         }
     }
 
-    let all_requests = server.received_requests().await.expect("received requests");
+    let all_requests = server
+        .received_requests()
+        .await
+        .unwrap_or_else(|| panic!("received requests"));
     let requests: Vec<_> = all_requests
         .iter()
         .filter(|req| req.method == "POST" && req.url.path().ends_with("/chat/completions"))
