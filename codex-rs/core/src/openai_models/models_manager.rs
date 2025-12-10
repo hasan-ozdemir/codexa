@@ -41,7 +41,7 @@ pub struct ModelsManager {
     etag: RwLock<Option<String>>,
     codex_home: PathBuf,
     cache_ttl: Duration,
-    provider: Option<ModelProviderInfo>,
+    provider: ModelProviderInfo,
 }
 
 impl ModelsManager {
@@ -55,7 +55,7 @@ impl ModelsManager {
             etag: RwLock::new(None),
             codex_home,
             cache_ttl: DEFAULT_MODEL_CACHE_TTL,
-            provider: ModelProviderInfo::get_chatgpt_provider().ok(),
+            provider: ModelProviderInfo::get_chatgpt_provider(),
         }
     }
 
@@ -70,7 +70,7 @@ impl ModelsManager {
             etag: RwLock::new(None),
             codex_home,
             cache_ttl: DEFAULT_MODEL_CACHE_TTL,
-            provider: Some(provider),
+            provider,
         }
     }
 
@@ -80,12 +80,9 @@ impl ModelsManager {
             return Ok(());
         }
 
-        let provider = self.provider.as_ref().ok_or_else(|| {
-            crate::error::CodexErr::UnsupportedOperation("model provider not configured".into())
-        })?;
         let auth = self.auth_manager.auth();
-        let api_provider = provider.to_api_provider(Some(AuthMode::ChatGPT))?;
-        let api_auth = auth_provider_from_auth(auth.clone(), provider).await?;
+        let api_provider = self.provider.to_api_provider(Some(AuthMode::ChatGPT))?;
+        let api_auth = auth_provider_from_auth(auth.clone(), &self.provider).await?;
         let transport = ReqwestTransport::new(build_reqwest_client());
         let client = ModelsClient::new(transport, api_provider, api_auth);
 
