@@ -391,14 +391,12 @@ impl ChatWidget {
             .set_history_metadata(event.history_log_id, event.history_entry_count);
         self.conversation_id = Some(event.session_id);
         self.current_rollout_path = Some(event.rollout_path.clone());
-        let requested_model = self.model_family.get_model_slug().to_string();
         let initial_messages = event.initial_messages.clone();
         let model_for_header = event.model.clone();
         self.session_header.set_model(&model_for_header);
-        self.config.model = Some(model_for_header.clone());
         self.add_to_history(history_cell::new_session_info(
             &self.config,
-            &requested_model,
+            &model_for_header,
             event,
             self.show_welcome_banner,
         ));
