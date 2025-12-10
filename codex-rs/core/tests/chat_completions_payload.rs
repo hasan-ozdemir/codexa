@@ -110,10 +110,14 @@ async fn run_request(input: Vec<ResponseItem>) -> Value {
         }
     }
 
-    let requests = get_responses_requests(&server).await;
+    let all_requests = server.received_requests().await.unwrap();
+    let requests: Vec<_> = all_requests
+        .iter()
+        .filter(|req| req.method == "POST" && req.url.path().ends_with("/chat/completions"))
+        .collect();
     let request = requests
         .first()
-        .unwrap_or_else(|| panic!("expected POST request to /responses"));
+        .unwrap_or_else(|| panic!("expected POST request to /chat/completions"));
     match request.body_json() {
         Ok(v) => v,
         Err(e) => panic!("invalid json body: {e}"),
