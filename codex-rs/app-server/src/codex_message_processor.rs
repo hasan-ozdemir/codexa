@@ -1511,7 +1511,7 @@ impl CodexMessageProcessor {
         } = params;
 
         let requested_page_size = limit
-            .map(|value| usize::try_from(value).unwrap_or(THREAD_LIST_MAX_LIMIT))
+            .map(|value| value as usize)
             .unwrap_or(THREAD_LIST_DEFAULT_LIMIT)
             .clamp(1, THREAD_LIST_MAX_LIMIT);
         let (summaries, next_cursor) = match self
@@ -1804,7 +1804,6 @@ impl CodexMessageProcessor {
             model_providers,
         } = params;
         let requested_page_size = page_size
-            .map(|value| usize::try_from(value).unwrap_or(THREAD_LIST_MAX_LIMIT))
             .unwrap_or(THREAD_LIST_DEFAULT_LIMIT)
             .clamp(1, THREAD_LIST_MAX_LIMIT);
 
@@ -1868,7 +1867,7 @@ impl CodexMessageProcessor {
                 }
             };
 
-            let filtered = page
+            let mut filtered = page
                 .items
                 .into_iter()
                 .filter_map(|it| {
@@ -1884,6 +1883,9 @@ impl CodexMessageProcessor {
                     )
                 })
                 .collect::<Vec<_>>();
+            if filtered.len() > remaining {
+                filtered.truncate(remaining);
+            }
             items.extend(filtered);
             remaining = requested_page_size.saturating_sub(items.len());
 
