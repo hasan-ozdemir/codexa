@@ -39,7 +39,7 @@ sessions without rediscovering the process.
 - Change lifecycle for each viewport port:
   - Before reading any code or tests for the next iteration, create a new
     change and set an initial description:
-    - `jj new 'trunk()'`
+    - `jj new`
     - `jj desc -m "feat(tui2): <short summary>"`.
   - It is fine to read `jj log` output (including the original viewport
     commit’s detailed message) to decide on that summary before creating the
@@ -58,7 +58,7 @@ sessions without rediscovering the process.
 - New work:
   - Start a fresh change when beginning a new chunk of work, before touching
     any non-log files:
-    - `jj new 'trunk()'` (or from the current head on `main` as appropriate).
+    - `jj new`.
   - Immediately set a descriptive change message:
     - `jj desc -m "feat(tui2): <short summary>"`.
   - Keep `jj status` clean and meaningful throughout, and refine the
@@ -190,11 +190,21 @@ ported into `tui2`. Update it at the end of each iteration.
     - Keeps tests and snapshots stable:
       - Ensures the default behavior remains pinned to bottom (`TranscriptScroll::ToBottom`) so non-scrolled sessions render as before, and re-runs `cargo test -p codex-tui2` to verify all 512 tests pass with no snapshot updates required.
 
+  - `eac367c410170684a2d0689daf6270477f639529` – `tui: lift bottom pane with short transcript`
+    - Adjusts the main inline layout so the chat composer sits directly beneath the rendered transcript when history is short:
+      - Changes the `TuiEvent::Draw` path in `codex-rs/tui2/src/app.rs` to let `render_transcript_cells` return a `chat_top` row given the desired chat height, and positions the chat area starting at that row instead of always pegging it to the bottom of the terminal.
+      - Clears only the region above the chat before drawing the transcript and fills any remaining rows *below* the chat to avoid stale content after layout changes.
+    - Refines transcript rendering to respect a bounded transcript region above the chat:
+      - Computes a `max_transcript_height = frame.height - chat_height` and renders at most that many lines of wrapped transcript, preserving the existing scroll anchoring and bottom-pinned behavior from the previous iteration.
+      - When the transcript is shorter than the available space, places the chat immediately below the transcript with at most a single spacer line; when it is longer, retains the original “chat pinned to bottom” layout.
+    - Keeps snapshot behavior unchanged:
+      - The default bottom-pinned behavior remains identical once the transcript fills the viewport; the change only affects vertical placement when history is short, and `cargo test -p codex-tui2` continues to pass with existing snapshots.
+
 - **Last ported viewport change**:
-  - `wzwouyux 99c761fa` – `feat: implement transcript scrolling statefully`
+  - `eac367c410170684a2d0689daf6270477f639529` – `tui: lift bottom pane with short transcript`
 
 - **Next planned viewport change to port**:
-  - (next viewport commit after `wzwouyux` on `joshka/viewport`, see `jj log -r 'main..bookmarks(\"joshka/viewport\")'` for the current head)
+  - `7a814b470e2f60e16441834994a76ff2e4799d41` – `tui: restore mouse wheel scrolling in overlays`
 
 - **Estimated iterations**
   - There are ~19 viewport commits after `rmntvvqt`. Many are tightly related
@@ -224,7 +234,7 @@ ported into `tui2`. Update it at the end of each iteration.
 - Start a new change on top of trunk/main:
 
   ```sh
-  jj new 'trunk()'
+  jj new
   jj desc -m "feat(tui2): render transcript above composer"
   ```
 
