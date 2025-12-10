@@ -942,15 +942,6 @@ async fn exec_command_reports_chunk_and_exit_metadata() -> Result<()> {
     let requests = server.received_requests().await.expect("recorded requests");
     assert!(!requests.is_empty(), "expected at least one POST request");
 
-    for req in &requests {
-        println!(
-            "REQ {} {} body='{}'",
-            req.method,
-            req.url.path(),
-            String::from_utf8_lossy(&req.body)
-        );
-    }
-
     let bodies = get_responses_request_bodies(&server).await;
 
     let outputs = collect_tool_outputs(&bodies)?;
