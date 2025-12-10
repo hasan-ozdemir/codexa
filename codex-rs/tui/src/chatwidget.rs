@@ -1324,7 +1324,6 @@ impl ChatWidget {
         };
 
         widget.prefetch_rate_limits();
-        widget.config.model = Some(model_slug);
 
         widget
     }
@@ -1411,7 +1410,6 @@ impl ChatWidget {
         };
 
         widget.prefetch_rate_limits();
-        widget.config.model = Some(model_slug);
 
         widget
     }
@@ -2972,7 +2970,6 @@ impl ChatWidget {
     /// Set the model in the widget's config copy.
     pub(crate) fn set_model(&mut self, model: &str, model_family: ModelFamily) {
         self.session_header.set_model(model);
-        self.config.model = Some(model.to_string());
         self.model_family = model_family;
     }
 
