@@ -1,0 +1,201 @@
+# TUI2 Viewport Porting Execplan
+
+This document captures the working plan for replaying the `joshka/viewport`
+changes onto the new `tui2` crate, so the work can be resumed in later Codex
+sessions without rediscovering the process.
+
+## Baseline
+
+- `main` already contains the `tui2` feature-flag plumbing:
+  - `codex-tui2` shim crate exists and delegates to `codex-tui`.
+  - `codex` CLI selects the frontend via the `tui2` feature flag, resolved from
+    config (including profiles and CLI `-c` / `--enable` overrides).
+- The `joshka/viewport` bookmark holds the original viewport work against the
+  old TUI:
+  - Use `jj log -r 'main..bookmarks("joshka/viewport")'` to list the relevant
+    commits.
+  - The refactor base is `rmntvvqt` ("refactor: tui.rs extract several pieces").
+  - The first "real" viewport change after that is `kzvkyynm`
+    ("feat: render transcript above composer").
+- The original bookmark must remain untouched; new work is done on top of
+  `main` using `tui2`.
+
+## General JJ Workflow
+
+- Always understand commands via `jj help`:
+  - `jj help -k revsets` for revset syntax and idioms.
+  - `jj log --help`, `jj diff --help`, `jj status --help`,
+    `jj duplicate --help`, `jj desc --help`, `jj new --help` as needed.
+  - For each viewport commit, inspect the **full commit message** (header and
+    body) using:
+    - `jj log -Tbuiltin_log_detailed -r <rev>`
+    This ensures new `tui2` commits preserve at least the same level of
+    documentation and context.
+
+- Working copy and history:
+  - `jj status` to confirm the current working change `@` and its parent `@-`.
+  - `jj log -r 'main..bookmarks("joshka/viewport")'` to see the viewport
+    commits that need to be replayed.
+  - `jj diff -r @-` to see the diff between the previous change and the
+    current working copy.
+
+- New work:
+  - Start a fresh change when beginning a new chunk of work:
+    - `jj new 'trunk()'` (or from the current head on `main` as appropriate).
+  - Immediately set a descriptive change message:
+    - `jj desc -m "feat(tui2): <short summary>"`.
+  - Keep `jj status` clean and meaningful throughout.
+
+- Diff inspection:
+  - For each viewport commit being ported, inspect the full original diff:
+    - `jj diff -r <change-id>` (no `--stat`).
+  - Use `--stat` (`jj diff -r <change-id> --stat`) only for a high-level
+    overview; always read the detailed diff before porting.
+
+- Optional duplication:
+  - When helpful to preserve the original description or structure, duplicate
+    a viewport commit on top of the current change:
+    - `jj duplicate -r <change-id> -d @`
+  - Then edit the duplicated change's contents to match the `tui2`
+    implementation instead of the original `tui` changes.
+  - This leaves the `joshka/viewport` bookmark unchanged.
+
+## Porting Strategy Per Commit
+
+For each viewport commit after `rmntvvqt`:
+
+1. **Identify and understand the change**
+   - Use `jj diff -r <viewport-change>` to see which files and behaviors are
+     involved (typically `codex-rs/tui/src/app.rs`, `codex-rs/tui/src/tui.rs`,
+     and related modules).
+   - Classify the change:
+     - Pure refactor (structure only).
+     - New viewport behavior (scrolling, selection, transcript printing, etc.).
+     - Bug fix around repainting/standby/suspend.
+     - Documentation.
+
+2. **Decide ordering**
+   - Prefer to apply structural or helper changes earlier in the `tui2` tree
+     if that makes later ports simpler, rather than strictly following the
+     historical order.
+   - It's acceptable to split a single historical commit into multiple smaller
+     atomic changes in `tui2` if that improves clarity.
+
+3. **Reuse vs copy**
+   - **Prefer reuse** when the change can be expressed as:
+     - "tui2 calls a public API in `codex-rs/tui`," or
+     - "tui2 composes existing `tui` widgets/helpers."
+   - Only consider widening visibility in `tui` (e.g. `pub(crate)` to `pub`)
+     when:
+     - The surface area is small, and
+     - It avoids duplicating substantial logic.
+   - **Default to copying** when reuse would require:
+     - Making many internal `tui` details public, or
+     - Broad changes to the `tui` crate's structure.
+   - When copying:
+     - Copy the minimal code required into `codex-rs/tui2` (e.g. a dedicated
+       transcript/viewport module).
+     - Adjust imports to use the same core/common types as the original.
+     - Keep duplicated code localized to ease future comparison/cleanup.
+
+4. **Implement in `tui2`**
+   - Treat the tree as fresh: implement the behavior directly in `tui2`
+     instead of trying to patch `tui` and then re-expose it.
+   - Add new modules or types under `codex-rs/tui2/src/` as needed.
+   - Where appropriate, delegate to `codex_tui` via the shim if that cleanly
+     expresses the behavior.
+
+5. **Testing and validation**
+   - After each logically complete step:
+     - Run `just fmt` in `codex-rs`.
+     - Run `cargo check` (at minimum; `cargo test -p codex-cli` and
+       `cargo test -p codex-tui2` when changes touch behavior).
+   - If the change is too large, use `jj split` to break it into smaller
+     atomic commits with clear messages.
+
+## Visibility / Duplication Guidelines
+
+- Avoid heavy changes to `tui` visibility:
+  - Do **not** turn large swaths of `pub(crate)` APIs into `pub` just to
+    support `tui2`.
+  - If a refactor or visibility change would impact many call sites, prefer
+    copying the relevant code into `tui2` instead.
+- Before making any non-trivial visibility changes in `tui`:
+  - Pause and validate the approach manually (or with the human reviewer).
+  - Compare:
+    - Lines changed in `tui`, vs.
+    - Lines copied into `tui2`.
+  - Prefer the option with the smaller, more localized impact.
+
+## Progress Tracking
+
+Use this section to keep track of how far the `joshka/viewport` work has been
+ported into `tui2`. Update it at the end of each iteration.
+
+- **Last ported viewport change**:
+  - `kzvkyynm 1590c445` – `feat: render transcript above composer`
+    - Ported into `codex-rs/tui2` by:
+      - Teaching `App::handle_tui_event` to reserve a bottom-aligned chat area and render the transcript above it via a new `render_transcript_cells` helper (mirroring the original viewport behavior while keeping logic inside `app.rs` for now).
+      - Updating `AppEvent::InsertHistoryCell` to append to `transcript_cells` and stop injecting vt100 history directly via `tui.insert_history_lines`, so the transcript is owned by Codex rather than the terminal scrollback.
+      - Adjusting `Tui::draw` in `tui2/src/tui.rs` to stop using `scroll_region_up` or inserting `pending_history_lines` into the inline viewport, keeping the viewport stable while the transcript is rendered inside the TUI.
+    - This preserves the existing “god-module” structure for now; future viewport commits may move transcript/viewport concerns into a dedicated module once the design stabilizes.
+
+- **Next planned viewport change to port**:
+  - `ssupompv 01a18197` – `feat: wrap transcript and enable mouse scroll`
+
+- **Estimated iterations**
+  - There are ~19 viewport commits after `rmntvvqt`. Many are tightly related
+    and can be grouped into fewer, more atomic `tui2` commits.
+  - Expect roughly **10–15 local iterations**, each:
+    - Focused on a coherent behavior slice (e.g. “render transcript above
+      composer”, “add scroll state”, “add selection and copy”, “print exit
+      transcript”).
+    - Ending with `cargo check` and, where relevant, targeted tests for
+      `codex-cli` / `codex-tui2`.
+
+## Concrete Command Examples
+
+- Show viewport commits relative to main:
+
+  ```sh
+  jj log -r 'main..bookmarks("joshka/viewport")'
+  ```
+
+- Inspect the first non-refactor viewport change:
+
+  ```sh
+  jj diff -r kzvkyynm          # full diff
+  jj diff -r kzvkyynm --stat   # summary
+  ```
+
+- Start a new change on top of trunk/main:
+
+  ```sh
+  jj new 'trunk()'
+  jj desc -m "feat(tui2): render transcript above composer"
+  ```
+
+- Work on the change in `codex-rs/tui2`, then check progress:
+
+  ```sh
+  jj status
+  jj diff                      # current working diff
+  cargo check
+  ```
+
+- Optionally duplicate an original viewport commit for reference:
+
+  ```sh
+  jj duplicate -r kzvkyynm -d @
+  # then edit files so the duplicated change uses tui2 instead of tui
+  ```
+
+- View the previous change’s diff when stacking work:
+
+  ```sh
+  jj diff -r @-
+  ```
+
+This plan should be sufficient to resume the TUI viewport porting work in a
+future Codex session, without rediscovering the JJ tooling or the reuse-vs-copy
+strategy for `tui2`. 
