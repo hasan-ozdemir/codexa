@@ -21,6 +21,7 @@ use crate::auth::AuthManager;
 use crate::config::Config;
 use crate::default_client::build_reqwest_client;
 use crate::error::Result as CoreResult;
+use crate::features::Feature;
 use crate::model_provider_info::ModelProviderInfo;
 use crate::openai_models::model_family::ModelFamily;
 use crate::openai_models::model_family::find_family_for_model;
@@ -75,7 +76,10 @@ impl ModelsManager {
     }
 
     /// Fetch the latest remote models, using the on-disk cache when still fresh.
-    pub async fn refresh_available_models(&self) -> CoreResult<()> {
+    pub async fn refresh_available_models(&self, config: &Config) -> CoreResult<()> {
+        if !config.features.enabled(Feature::RemoteModels) {
+            return Ok(());
+        }
         if self.try_load_cache().await {
             return Ok(());
         }
@@ -100,8 +104,8 @@ impl ModelsManager {
         Ok(())
     }
 
-    pub async fn list_models(&self) -> Vec<ModelPreset> {
-        if let Err(err) = self.refresh_available_models().await {
+    pub async fn list_models(&self, config: &Config) -> Vec<ModelPreset> {
+        if let Err(err) = self.refresh_available_models(config).await {
             error!("failed to refresh available models: {err}");
         }
         self.available_models.read().await.clone()
@@ -120,11 +124,11 @@ impl ModelsManager {
             .with_remote_overrides(self.remote_models.read().await.clone())
     }
 
-    pub async fn get_model(&self, model: Option<&str>) -> String {
+    pub async fn get_model(&self, model: Option<&str>, config: &Config) -> String {
         if let Some(model) = model {
             return model.to_string();
         }
-        if let Err(err) = self.refresh_available_models().await {
+        if let Err(err) = self.refresh_available_models(config).await {
             error!("failed to refresh available models: {err}");
         }
         // if codex-auto-balanced exists & signed in with chatgpt mode, return it, otherwise return the default model
@@ -247,6 +251,10 @@ mod tests {
     use super::*;
     use crate::CodexAuth;
     use crate::auth::AuthCredentialsStoreMode;
+    use crate::config::Config;
+    use crate::config::ConfigOverrides;
+    use crate::config::ConfigToml;
+    use crate::features::Feature;
     use crate::model_provider_info::WireApi;
     use codex_protocol::openai_models::ModelsResponse;
     use core_test_support::responses::mount_models_once;
@@ -306,19 +314,27 @@ mod tests {
         )
         .await;
 
+        let codex_home = tempdir().expect("temp dir");
+        let mut config = Config::load_from_base_config_with_overrides(
+            ConfigToml::default(),
+            ConfigOverrides::default(),
+            codex_home.path().to_path_buf(),
+        )
+        .expect("load default test config");
+        config.features.enable(Feature::RemoteModels);
         let auth_manager =
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
         let provider = provider_for(server.uri());
         let manager = ModelsManager::with_provider(auth_manager, provider);
 
         manager
-            .refresh_available_models()
+            .refresh_available_models(&config)
             .await
             .expect("refresh succeeds");
         let cached_remote = manager.remote_models.read().await.clone();
         assert_eq!(cached_remote, remote_models);
 
-        let available = manager.list_models().await;
+        let available = manager.list_models(&config).await;
         assert_eq!(available.len(), 2);
         assert_eq!(available[0].model, "priority-high");
         assert!(
@@ -348,6 +364,13 @@ mod tests {
         .await;
 
         let codex_home = tempdir().expect("temp dir");
+        let mut config = Config::load_from_base_config_with_overrides(
+            ConfigToml::default(),
+            ConfigOverrides::default(),
+            codex_home.path().to_path_buf(),
+        )
+        .expect("load default test config");
+        config.features.enable(Feature::RemoteModels);
         let auth_manager = Arc::new(AuthManager::new(
             codex_home.path().to_path_buf(),
             false,
@@ -357,7 +380,7 @@ mod tests {
         let manager = ModelsManager::with_provider(auth_manager, provider);
 
         manager
-            .refresh_available_models()
+            .refresh_available_models(&config)
             .await
             .expect("first refresh succeeds");
         assert_eq!(
@@ -368,7 +391,7 @@ mod tests {
 
         // Second call should read from cache and avoid the network.
         manager
-            .refresh_available_models()
+            .refresh_available_models(&config)
             .await
             .expect("cached refresh succeeds");
         assert_eq!(
@@ -397,6 +420,13 @@ mod tests {
         .await;
 
         let codex_home = tempdir().expect("temp dir");
+        let mut config = Config::load_from_base_config_with_overrides(
+            ConfigToml::default(),
+            ConfigOverrides::default(),
+            codex_home.path().to_path_buf(),
+        )
+        .expect("load default test config");
+        config.features.enable(Feature::RemoteModels);
         let auth_manager = Arc::new(AuthManager::new(
             codex_home.path().to_path_buf(),
             false,
@@ -406,7 +436,7 @@ mod tests {
         let manager = ModelsManager::with_provider(auth_manager, provider);
 
         manager
-            .refresh_available_models()
+            .refresh_available_models(&config)
             .await
             .expect("initial refresh succeeds");
 
@@ -432,7 +462,7 @@ mod tests {
         .await;
 
         manager
-            .refresh_available_models()
+            .refresh_available_models(&config)
             .await
             .expect("second refresh succeeds");
         assert_eq!(

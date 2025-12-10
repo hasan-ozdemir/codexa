@@ -218,8 +218,8 @@ impl ConversationManager {
         self.finalize_spawn(codex, conversation_id).await
     }
 
-    pub async fn list_models(&self) -> Vec<ModelPreset> {
-        self.models_manager.list_models().await
+    pub async fn list_models(&self, config: &Config) -> Vec<ModelPreset> {
+        self.models_manager.list_models(config).await
     }
 
     pub fn get_models_manager(&self) -> Arc<ModelsManager> {

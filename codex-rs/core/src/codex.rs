@@ -182,12 +182,12 @@ impl Codex {
 
         let config = Arc::new(config);
         if config.features.enabled(Feature::RemoteModels)
-            && let Err(err) = models_manager.refresh_available_models().await
+            && let Err(err) = models_manager.refresh_available_models(&config).await
         {
             error!("failed to refresh available models: {err:?}");
         }
         let model = models_manager
-            .get_model(config.model.clone().as_deref())
+            .get_model(config.model.clone().as_deref(), &config)
             .await;
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),

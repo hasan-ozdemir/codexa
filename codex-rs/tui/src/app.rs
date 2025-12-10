@@ -128,7 +128,7 @@ async fn handle_model_migration_prompt_if_needed(
     auth_mode: Option<AuthMode>,
     models_manager: Arc<ModelsManager>,
 ) -> Option<AppExitInfo> {
-    let available_models = models_manager.list_models().await;
+    let available_models = models_manager.list_models(config).await;
     let upgrade = available_models
         .iter()
         .find(|preset| preset.model == model)
@@ -273,7 +273,7 @@ impl App {
         ));
         let mut model = conversation_manager
             .get_models_manager()
-            .get_model(config.model.clone().as_deref())
+            .get_model(config.model.clone().as_deref(), &config)
             .await;
         let exit_info = handle_model_migration_prompt_if_needed(
             tui,

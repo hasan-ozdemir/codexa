@@ -280,7 +280,7 @@ pub async fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> any
     let conversation_manager = ConversationManager::new(auth_manager.clone(), SessionSource::Exec);
     let default_model = conversation_manager
         .get_models_manager()
-        .get_model(config.model.clone().as_deref())
+        .get_model(config.model.clone().as_deref(), &config)
         .await;
 
     // Handle resume subcommand by resolving a rollout path and using explicit resume API.

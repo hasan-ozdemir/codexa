@@ -101,7 +101,8 @@ async fn remote_models_remote_model_uses_unified_exec() -> Result<()> {
     } = harness;
 
     let models_manager = conversation_manager.get_models_manager();
-    let available_model = wait_for_model_available(&models_manager, REMOTE_MODEL_SLUG).await;
+    let available_model =
+        wait_for_model_available(&models_manager, REMOTE_MODEL_SLUG, &config).await;
 
     assert_eq!(available_model.model, REMOTE_MODEL_SLUG);
 
@@ -234,12 +235,13 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
     let RemoteModelsHarness {
         codex,
         cwd,
+        config,
         conversation_manager,
         ..
     } = harness;
 
     let models_manager = conversation_manager.get_models_manager();
-    wait_for_model_available(&models_manager, model).await;
+    wait_for_model_available(&models_manager, model, &config).await;
 
     codex
         .submit(Op::OverrideTurnContext {
@@ -276,11 +278,15 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
     Ok(())
 }
 
-async fn wait_for_model_available(manager: &Arc<ModelsManager>, slug: &str) -> ModelPreset {
+async fn wait_for_model_available(
+    manager: &Arc<ModelsManager>,
+    slug: &str,
+    config: &Config,
+) -> ModelPreset {
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
         if let Some(model) = {
-            let guard = manager.list_models().await;
+            let guard = manager.list_models(config).await;
             guard.iter().find(|model| model.model == slug).cloned()
         } {
             return model;
