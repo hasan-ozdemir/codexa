@@ -1326,7 +1326,7 @@ impl ChatWidget {
         };
 
         widget.prefetch_rate_limits();
-        widget.config.model = Some(model_slug.clone());
+        widget.config.model = Some(model_slug);
 
         widget
     }
@@ -1413,7 +1413,7 @@ impl ChatWidget {
         };
 
         widget.prefetch_rate_limits();
-        widget.config.model = Some(model_slug.clone());
+        widget.config.model = Some(model_slug);
 
         widget
     }
@@ -3252,10 +3252,6 @@ impl ChatWidget {
     /// runtime overrides applied via TUI, e.g., model or approval policy).
     pub(crate) fn config_ref(&self) -> &Config {
         &self.config
-    }
-
-    pub(crate) fn model_slug(&self) -> &str {
-        self.model_family.get_model_slug()
     }
 
     pub(crate) fn clear_token_usage(&mut self) {

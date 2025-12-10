@@ -1181,7 +1181,7 @@ mod tests {
     fn make_test_app() -> App {
         let (chat_widget, app_event_tx, _rx, _op_rx) = make_chatwidget_manual_with_sender();
         let config = chat_widget.config_ref().clone();
-        let current_model = chat_widget.model_slug().to_string();
+        let current_model = chat_widget.get_model_family().get_model_slug().to_string();
         let server = Arc::new(ConversationManager::with_models_provider(
             CodexAuth::from_api_key("Test API Key"),
             config.model_provider.clone(),
@@ -1221,7 +1221,7 @@ mod tests {
     ) {
         let (chat_widget, app_event_tx, rx, op_rx) = make_chatwidget_manual_with_sender();
         let config = chat_widget.config_ref().clone();
-        let current_model = chat_widget.model_slug().to_string();
+        let current_model = chat_widget.get_model_family().get_model_slug().to_string();
         let server = Arc::new(ConversationManager::with_models_provider(
             CodexAuth::from_api_key("Test API Key"),
             config.model_provider.clone(),
