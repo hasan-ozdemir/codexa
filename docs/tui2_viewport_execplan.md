@@ -228,11 +228,9 @@ ported into `tui2`. Update it at the end of each iteration.
     - Keeps TUI2’s alt-screen behavior aligned with previous commits:
       - The `RestoreAltScreen` path continues to re-enter alt-screen and clear the terminal, but does not reintroduce alternate scroll; TUI2 remains on the simplified mouse/alt-screen model established in earlier viewport ports.
   - [ ] `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
-    - Not yet ported functionally to TUI2:
+    - Still not ported functionally to TUI2:
       - In the original TUI, this commit extends the ANSI exit transcript renderer so user prompts are padded out to the full terminal width using `user_message_style`, making prompts visually aligned in scrollback.
-      - For TUI2, we plan to introduce an equivalent `render_lines_to_ansi` helper and `session_lines` plumbing once the full exit transcript feature (`stsxnzvx`) is ported, so padding, styling, and printing can be validated together.
-    - Current TUI2 state after nearby commits:
-      - `insert_history::write_spans` has been made `pub(crate)` (see `wlpmusny` below), giving us the same low-level vt100 emission path as the original TUI for when we hook up exit transcript rendering.
+      - For TUI2, the underlying vt100 span writer is now exposed via `insert_history::write_spans` (see `wlpmusny` above), but the higher-level renderer and `session_lines` plumbing are intentionally deferred until we port the full exit transcript feature (`stsxnzvx`) so padding and printing can be validated together.
   - [x] `wlpmusny b5138e63` – `feat: style exit transcript with ANSI`
     - Prepares TUI2 to reuse the same ANSI styling pipeline as the original TUI when printing exit transcripts:
       - Updates `codex-rs/tui2/src/insert_history.rs` to expose `write_spans` as `pub(crate)`, mirroring the upstream change in `tui/src/insert_history.rs` so other modules (like a future exit transcript renderer) can stream styled spans into a vt100 buffer.
