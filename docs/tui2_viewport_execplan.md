@@ -213,7 +213,11 @@ ported into `tui2`. Update it at the end of each iteration.
     - Keeps overlay snapshots and behavior stable:
       - The scroll step matches the inline transcript (3 lines per wheel tick), and `cargo test -p codex-tui2` still passes with existing overlay snapshot tests.
 
-  - [ ] `ppmpnvty 099b42e3` – `docs: document TUI viewport and history model`
+  - [x] `ppmpnvty 099b42e3` – `docs: document TUI viewport and history model`
+    - TUI2 now has a crate‑specific companion doc at `codex-rs/docs/tui2_viewport_and_history.md`
+      that maps the original viewport/history design onto the new crate. It calls out the key TUI2
+      types (`App`, `TranscriptScroll`, `TranscriptSelection`, exit transcript plumbing) and points
+      back to the legacy doc for historical context.
     - Documentation-only change in the original TUI. TUI2 has its own execplan (`docs/tui2_viewport_execplan.md`); we may want to mirror or reference the upstream docs once the viewport work stabilizes.
 
   - [x] `tosqkrlr b0021eae` – `fix: clear screen after suspend/overlay`

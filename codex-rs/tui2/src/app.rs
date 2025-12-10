@@ -22,6 +22,8 @@ use crate::skill_error_prompt::run_skill_error_prompt;
 use crate::tui;
 use crate::tui::TuiEvent;
 use crate::update_action::UpdateAction;
+use crate::wrapping::RtOptions;
+use crate::wrapping::word_wrap_line;
 use crate::wrapping::word_wrap_lines_borrowed;
 use codex_ansi_escape::ansi_escape_line;
 use codex_app_server_protocol::AuthMode;
@@ -644,6 +646,31 @@ impl App {
             return area.y;
         }
 
+        let is_user_cell: Vec<bool> = cells
+            .iter()
+            .map(|c| c.as_any().is::<UserHistoryCell>())
+            .collect();
+        let base_opts: RtOptions<'_> = RtOptions::new(transcript_area.width.max(1) as usize);
+        let mut wrapped_is_user_row: Vec<bool> = Vec::with_capacity(wrapped.len());
+        let mut first = true;
+        for (idx, line) in lines.iter().enumerate() {
+            let opts = if first {
+                base_opts.clone()
+            } else {
+                base_opts
+                    .clone()
+                    .initial_indent(base_opts.subsequent_indent.clone())
+            };
+            let seg_count = word_wrap_line(line, opts).len();
+            let is_user_row = meta
+                .get(idx)
+                .and_then(|entry| entry.as_ref())
+                .map(|(cell_index, _)| is_user_cell.get(*cell_index).copied().unwrap_or(false))
+                .unwrap_or(false);
+            wrapped_is_user_row.extend(std::iter::repeat(is_user_row).take(seg_count));
+            first = false;
+        }
+
         let total_lines = wrapped.len();
         self.transcript_total_lines = total_lines;
         let max_visible = std::cmp::min(max_transcript_height as usize, total_lines);
@@ -716,6 +743,19 @@ impl App {
                 width: transcript_area.width,
                 height: 1,
             };
+
+            if wrapped_is_user_row
+                .get(line_index)
+                .copied()
+                .unwrap_or(false)
+            {
+                let base_style = crate::style::user_message_style();
+                for x in row_area.x..row_area.right() {
+                    let cell = &mut frame.buffer[(x, y)];
+                    let style = cell.style().patch(base_style);
+                    cell.set_style(style);
+                }
+            }
 
             wrapped[line_index].render_ref(row_area, frame.buffer);
         }
@@ -791,7 +831,6 @@ impl App {
 
         match mouse_event.kind {
             MouseEventKind::ScrollUp => {
-                self.transcript_selection = TranscriptSelection::default();
                 self.scroll_transcript(
                     tui,
                     -3,
@@ -800,7 +839,6 @@ impl App {
                 );
             }
             MouseEventKind::ScrollDown => {
-                self.transcript_selection = TranscriptSelection::default();
                 self.scroll_transcript(
                     tui,
                     3,
@@ -1908,7 +1946,6 @@ impl App {
                     if chat_height < height {
                         let transcript_height = height.saturating_sub(chat_height);
                         if transcript_height > 0 {
-                            self.transcript_selection = TranscriptSelection::default();
                             self.scroll_transcript(
                                 tui,
                                 -i32::try_from(transcript_height).unwrap_or(i32::MIN),
@@ -1932,7 +1969,6 @@ impl App {
                     if chat_height < height {
                         let transcript_height = height.saturating_sub(chat_height);
                         if transcript_height > 0 {
-                            self.transcript_selection = TranscriptSelection::default();
                             self.scroll_transcript(
                                 tui,
                                 i32::try_from(transcript_height).unwrap_or(i32::MAX),
@@ -1953,7 +1989,6 @@ impl App {
                         cell_index: 0,
                         line_in_cell: 0,
                     };
-                    self.transcript_selection = TranscriptSelection::default();
                     tui.frame_requester().schedule_frame();
                 }
             }
@@ -1963,7 +1998,6 @@ impl App {
                 ..
             } => {
                 self.transcript_scroll = TranscriptScroll::ToBottom;
-                self.transcript_selection = TranscriptSelection::default();
                 tui.frame_requester().schedule_frame();
             }
             // Enter confirms backtrack when primed + count > 0. Otherwise pass to widget.
