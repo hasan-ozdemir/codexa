@@ -375,6 +375,7 @@ async fn run_ratatui_app(
                         token_usage: codex_core::protocol::TokenUsage::default(),
                         conversation_id: None,
                         update_action: Some(action),
+                        session_lines: Vec::new(),
                     });
                 }
             }
@@ -414,6 +415,7 @@ async fn run_ratatui_app(
                 token_usage: codex_core::protocol::TokenUsage::default(),
                 conversation_id: None,
                 update_action: None,
+                session_lines: Vec::new(),
             });
         }
         // if the user acknowledged windows or made an explicit decision ato trust the directory, reload the config accordingly
@@ -449,6 +451,7 @@ async fn run_ratatui_app(
                     token_usage: codex_core::protocol::TokenUsage::default(),
                     conversation_id: None,
                     update_action: None,
+                    session_lines: Vec::new(),
                 });
             }
         }
@@ -487,6 +490,7 @@ async fn run_ratatui_app(
                     token_usage: codex_core::protocol::TokenUsage::default(),
                     conversation_id: None,
                     update_action: None,
+                    session_lines: Vec::new(),
                 });
             }
             other => other,

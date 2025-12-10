@@ -78,6 +78,12 @@ pub struct AppExitInfo {
     pub token_usage: TokenUsage,
     pub conversation_id: Option<ConversationId>,
     pub update_action: Option<UpdateAction>,
+    /// ANSI-styled transcript lines to print after the TUI exits.
+    ///
+    /// These lines are rendered against the same width as the final TUI
+    /// viewport and include styling (colors, bold, etc.) so that scrollback
+    /// preserves the visual structure of the on-screen transcript.
+    pub session_lines: Vec<String>,
 }
 
 fn session_summary(
@@ -201,6 +207,7 @@ async fn handle_model_migration_prompt_if_needed(
                     token_usage: TokenUsage::default(),
                     conversation_id: None,
                     update_action: None,
+                    session_lines: Vec::new(),
                 });
             }
         }
@@ -327,6 +334,7 @@ impl App {
                         token_usage: TokenUsage::default(),
                         conversation_id: None,
                         update_action: None,
+                        session_lines: Vec::new(),
                     });
                 }
                 SkillErrorPromptOutcome::Continue => {}
@@ -474,11 +482,25 @@ impl App {
                 app.handle_tui_event(tui, event).await?
             }
         } {}
+        let width = tui.terminal.last_known_screen_size.width;
+        let session_lines = if width == 0 {
+            Vec::new()
+        } else {
+            let (lines, meta) = Self::build_transcript_lines(&app.transcript_cells, width);
+            let is_user_cell: Vec<bool> = app
+                .transcript_cells
+                .iter()
+                .map(|c| c.as_any().is::<UserHistoryCell>())
+                .collect();
+            Self::render_lines_to_ansi(&lines, &meta, &is_user_cell, width)
+        };
+
         tui.terminal.clear()?;
         Ok(AppExitInfo {
             token_usage: app.token_usage(),
             conversation_id: app.chat_widget.conversation_id(),
             update_action: app.pending_update_action,
+            session_lines,
         })
     }
 
@@ -967,6 +989,64 @@ impl App {
         }
 
         (lines, meta)
+    }
+
+    /// Render flattened transcript lines into ANSI strings suitable for
+    /// printing after the TUI exits.
+    ///
+    /// This helper mirrors the original TUI viewport behavior:
+    ///  - Merges line-level style into each span so the ANSI output matches
+    ///    the on-screen styling (e.g., blockquotes, lists).
+    ///  - For user-authored rows, pads the background style out to the full
+    ///    terminal width so prompts appear as solid blocks in scrollback.
+    ///  - Streams spans through the shared vt100 writer so downstream tests
+    ///    and tools see consistent escape sequences.
+    fn render_lines_to_ansi(
+        lines: &[Line<'static>],
+        meta: &[Option<(usize, usize)>],
+        is_user_cell: &[bool],
+        width: u16,
+    ) -> Vec<String> {
+        lines
+            .iter()
+            .enumerate()
+            .map(|(idx, line)| {
+                let is_user_row = meta
+                    .get(idx)
+                    .and_then(|entry| entry.as_ref())
+                    .map(|(cell_index, _)| is_user_cell.get(*cell_index).copied().unwrap_or(false))
+                    .unwrap_or(false);
+
+                let mut merged_spans: Vec<ratatui::text::Span<'static>> = line
+                    .spans
+                    .iter()
+                    .map(|s| ratatui::text::Span {
+                        style: s.style.patch(line.style),
+                        content: s.content.clone(),
+                    })
+                    .collect();
+
+                if is_user_row && width > 0 {
+                    let text: String = merged_spans.iter().map(|s| s.content.as_ref()).collect();
+                    let text_width = UnicodeWidthStr::width(text.as_str());
+                    let total_width = usize::from(width);
+                    if text_width < total_width {
+                        let pad_len = total_width.saturating_sub(text_width);
+                        if pad_len > 0 {
+                            let pad_style = crate::style::user_message_style();
+                            merged_spans.push(ratatui::text::Span {
+                                style: pad_style,
+                                content: " ".repeat(pad_len).into(),
+                            });
+                        }
+                    }
+                }
+
+                let mut buf: Vec<u8> = Vec::new();
+                let _ = crate::insert_history::write_spans(&mut buf, merged_spans.iter());
+                String::from_utf8(buf).unwrap_or_default()
+            })
+            .collect()
     }
 
     fn apply_transcript_selection(&self, area: Rect, buf: &mut Buffer) {
@@ -1708,10 +1788,12 @@ mod tests {
     use codex_core::protocol::SandboxPolicy;
     use codex_core::protocol::SessionConfiguredEvent;
     use codex_protocol::ConversationId;
+    use pretty_assertions::assert_eq;
     use ratatui::prelude::Line;
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
+    use vt100;
 
     fn make_test_app() -> App {
         let (chat_widget, app_event_tx, _rx, _op_rx) = make_chatwidget_manual_with_sender();
@@ -1991,6 +2073,19 @@ mod tests {
             summary.resume_command,
             Some("codex resume 123e4567-e89b-12d3-a456-426614174000".to_string())
         );
+    }
+
+    #[test]
+    fn render_lines_to_ansi_pads_user_rows_to_full_width() {
+        let line: Line<'static> = Line::from("hi");
+        let lines = vec![line];
+        let meta = vec![Some((0usize, 0usize))];
+        let is_user_cell = vec![true];
+        let width: u16 = 10;
+
+        let rendered = App::render_lines_to_ansi(&lines, &meta, &is_user_cell, width);
+        assert_eq!(rendered.len(), 1);
+        assert!(rendered[0].contains("hi"));
     }
 
     #[test]

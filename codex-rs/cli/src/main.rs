@@ -314,6 +314,9 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
 fn handle_app_exit(exit_info: AppExitInfo) -> anyhow::Result<()> {
     let update_action = exit_info.update_action;
     let color_enabled = supports_color::on(Stream::Stdout).is_some();
+    for line in exit_info.session_lines.iter() {
+        println!("{line}");
+    }
     for line in format_exit_messages(exit_info, color_enabled) {
         println!("{line}");
     }
@@ -699,6 +702,7 @@ fn from_tui2_exit_info(exit_info: Tui2AppExitInfo) -> AppExitInfo {
         token_usage: exit_info.token_usage,
         conversation_id: exit_info.conversation_id,
         update_action: exit_info.update_action.map(from_tui2_update_action),
+        session_lines: exit_info.session_lines,
     }
 }
 
@@ -865,6 +869,7 @@ mod tests {
                 .map(ConversationId::from_string)
                 .map(Result::unwrap),
             update_action: None,
+            session_lines: Vec::new(),
         }
     }
 
@@ -874,6 +879,7 @@ mod tests {
             token_usage: TokenUsage::default(),
             conversation_id: None,
             update_action: None,
+            session_lines: Vec::new(),
         };
         let lines = format_exit_messages(exit_info, false);
         assert!(lines.is_empty());

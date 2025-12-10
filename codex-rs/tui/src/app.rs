@@ -69,6 +69,12 @@ pub struct AppExitInfo {
     pub token_usage: TokenUsage,
     pub conversation_id: Option<ConversationId>,
     pub update_action: Option<UpdateAction>,
+    /// ANSI-styled transcript lines to print after the TUI exits.
+    ///
+    /// For the legacy TUI this is currently left empty; it exists so the
+    /// top-level CLI can treat both TUI frontends uniformly when printing
+    /// exit transcripts.
+    pub session_lines: Vec<String>,
 }
 
 fn session_summary(
@@ -192,6 +198,7 @@ async fn handle_model_migration_prompt_if_needed(
                     token_usage: TokenUsage::default(),
                     conversation_id: None,
                     update_action: None,
+                    session_lines: Vec::new(),
                 });
             }
         }
@@ -289,6 +296,7 @@ impl App {
                         token_usage: TokenUsage::default(),
                         conversation_id: None,
                         update_action: None,
+                        session_lines: Vec::new(),
                     });
                 }
                 SkillErrorPromptOutcome::Continue => {}
@@ -439,6 +447,7 @@ impl App {
             token_usage: app.token_usage(),
             conversation_id: app.chat_widget.conversation_id(),
             update_action: app.pending_update_action,
+            session_lines: Vec::new(),
         })
     }
 

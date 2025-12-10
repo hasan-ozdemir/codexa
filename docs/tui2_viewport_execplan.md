@@ -227,17 +227,25 @@ ported into `tui2`. Update it at the end of each iteration.
       - This mirrors the original TUI change that avoids leaving behind pre-standby artifacts when the inline viewport is shifted, ensuring the next draw starts from a clean buffer.
     - Keeps TUI2’s alt-screen behavior aligned with previous commits:
       - The `RestoreAltScreen` path continues to re-enter alt-screen and clear the terminal, but does not reintroduce alternate scroll; TUI2 remains on the simplified mouse/alt-screen model established in earlier viewport ports.
-  - [ ] `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
-    - Still not ported functionally to TUI2:
-      - In the original TUI, this commit extends the ANSI exit transcript renderer so user prompts are padded out to the full terminal width using `user_message_style`, making prompts visually aligned in scrollback.
-      - For TUI2, the underlying vt100 span writer is now exposed via `insert_history::write_spans` (see `wlpmusny` above), but the higher-level renderer and `session_lines` plumbing are intentionally deferred until we port the full exit transcript feature (`stsxnzvx`) so padding and printing can be validated together.
+  - [x] `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
+    - Exit transcript padding behavior is now ported to TUI2:
+      - Extends `codex-rs/tui2/src/app.rs` with an ANSI renderer that flattens transcript `Line` buffers via `App::build_transcript_lines` and `insert_history::write_spans`, mirroring the upstream TUI pipeline.
+      - Computes an `is_user_cell` bitmap from `transcript_cells` and pads user-authored rows out to the full terminal width using `crate::style::user_message_style`, so prompts appear as solid blocks in scrollback.
+    - Wiring into the exit path:
+      - `AppExitInfo` in both `tui` and `tui2` now includes a `session_lines: Vec<String>` field; the legacy TUI currently populates this as empty, while TUI2 fills it on shutdown using the ANSI renderer and current terminal width.
+      - The top-level CLI’s `handle_app_exit` prints `session_lines` before token usage and resume hints, so TUI2 sessions emit a styled transcript after exit without changing TUI1 behavior.
   - [x] `wlpmusny b5138e63` – `feat: style exit transcript with ANSI`
     - Prepares TUI2 to reuse the same ANSI styling pipeline as the original TUI when printing exit transcripts:
       - Updates `codex-rs/tui2/src/insert_history.rs` to expose `write_spans` as `pub(crate)`, mirroring the upstream change in `tui/src/insert_history.rs` so other modules (like a future exit transcript renderer) can stream styled spans into a vt100 buffer.
       - Keeps the actual exit transcript printing and per-row styling deferred to `stsxnzvx`/`kpxulmqr`, where we will introduce `render_lines_to_ansi` and wire `session_lines` into TUI2’s `AppExitInfo`.
     - No user-visible behavior change yet:
       - The interactive TUI2 viewport and CLI output remain unchanged; this step is about matching the original TUI’s internal extension points so later exit transcript work can layer cleanly on top.
-  - [ ] `stsxnzvx 892a8c86` – `feat: print session transcript after TUI exit`
+  - [x] `stsxnzvx 892a8c86` – `feat: print session transcript after TUI exit`
+    - Implements the “print transcript on exit” behavior for TUI2:
+      - `App::run` in `codex-rs/tui2/src/app.rs` now computes `session_lines` from `transcript_cells` at shutdown using the shared `build_transcript_lines` metadata and the new ANSI renderer.
+      - The CLI adapter `from_tui2_exit_info` maps TUI2’s `session_lines` into the shared `codex_tui::AppExitInfo` type so `cli/src/main.rs` can print the transcript uniformly before the existing token usage / resume lines.
+    - Legacy TUI stays stable:
+      - TUI1’s `AppExitInfo` grows a `session_lines` field but all existing exit paths populate it as `Vec::new()`, so `handle_app_exit` prints the transcript only for TUI2-backed sessions.
   - [ ] `ovqzxktt 7bc3a11c` – `feat: add clipboard copy for transcript selection`
   - [ ] `szttkmuz 08436aef` – `docs: describe streaming markdown wrapping`
   - [ ] `ylmxkvop 27265cae` – `feat: show transcript scroll position in footer`
@@ -263,10 +271,10 @@ ported into `tui2`. Update it at the end of each iteration.
       - Wheel scrolling still clears selections and delegates to `scroll_transcript`, and existing snapshots remain valid because selection and streaming behavior only affect interactive navigation.
 
 - **Last ported viewport change**:
-  - `wlpmusny b5138e63` – `feat: style exit transcript with ANSI`
+  - `stsxnzvx 892a8c86` – `feat: print session transcript after TUI exit`
 
 - **Next planned viewport change to port**:
-  - `kpxulmqr 2cef77ea` – `fix: pad user prompts in exit transcript`
+  - `ovqzxktt 7bc3a11c` – `feat: add clipboard copy for transcript selection`
 
 - **Estimated iterations**
   - There are ~19 viewport commits after `rmntvvqt`. Many are tightly related
