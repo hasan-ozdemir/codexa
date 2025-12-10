@@ -671,20 +671,26 @@ function dispatch(req) {
   }
 }
 
-function handleList(req) {
-  const entries = scanSessions();
+function handleList(_req) {
   const folderBased =
     process.env.FOLDER_BASED_SESSIONS?.toLowerCase?.() !== "false" &&
     process.env.folder_based_sessions?.toLowerCase?.() !== "false";
+  const entries = scanSessions(folderBased);
   if (!folderBased) {
     return { status: "ok", sessions: entries };
   }
   const cwd = normalizePath(process.cwd());
-  const filtered = entries.filter((e) => normalizePath(e.cwd) === cwd);
+  const cwdSlug = slugForCwd(process.cwd());
+  const filtered = entries.filter(
+    (e) =>
+      normalizePath(e.cwd) === cwd &&
+      e.slug &&
+      e.slug.toLowerCase() === cwdSlug.toLowerCase(),
+  );
   return { status: "ok", sessions: filtered };
 }
 
-function scanSessions() {
+function scanSessions(folderBased) {
   const out = [];
   const stack = [sessionsDir];
   while (stack.length) {
@@ -698,11 +704,29 @@ function scanSessions() {
     for (const ent of entries) {
       const p = path.join(dir, ent.name);
       if (ent.isDirectory()) {
-        stack.push(p);
+        const rel = path.relative(sessionsDir, p);
+        const depth = rel ? rel.split(path.sep).filter(Boolean).length : 0;
+        if (!folderBased) {
+          stack.push(p);
+          continue;
+        }
+        // folder-based: traverse only down to year/month/day/slug
+        if (depth <= 3) {
+          stack.push(p);
+        }
         continue;
       }
       if (!ent.name.toLowerCase().endsWith(".jsonl")) continue;
-      const meta = readSessionMeta(p);
+      if (folderBased) {
+        const rel = path.relative(sessionsDir, p);
+        const parts = rel.split(path.sep).filter(Boolean);
+        // expect year/month/day/slug/file => parent depth 4
+        if (parts.length < 5) {
+          // skip legacy flat files when folder-based is on
+          continue;
+        }
+      }
+      const meta = readSessionMeta(p, folderBased);
       if (!meta) continue;
       out.push(meta);
     }
@@ -710,7 +734,7 @@ function scanSessions() {
   return out.sort((a, b) => b.mtime_ms - a.mtime_ms);
 }
 
-function readSessionMeta(filePath) {
+function readSessionMeta(filePath, folderBased) {
   let stat;
   try {
     stat = fs.statSync(filePath);
@@ -735,7 +759,11 @@ function readSessionMeta(filePath) {
     return null;
   }
   if (!id || !cwd) return null;
-  return { id, cwd, path: filePath, mtime_ms: stat.mtimeMs };
+  const slug =
+    folderBased && cwd
+      ? slugForCwd(cwd)
+      : null;
+  return { id, cwd, slug, path: filePath, mtime_ms: stat.mtimeMs };
 }
 
 function normalizePath(p) {
@@ -745,6 +773,24 @@ function normalizePath(p) {
     .replace(/^\/\/\?\//, "")
     .replace(/^\/\//, "/")
     .toLowerCase();
+}
+
+function slugForCwd(cwdPath) {
+  const norm = normalizePath(cwdPath).replace(/\/+$/, "");
+  const tail = sanitizeTail(norm.split("/").filter(Boolean).pop() || "cwd");
+  const hash = require("crypto")
+    .createHash("sha256")
+    .update(norm)
+    .digest("hex")
+    .slice(0, 16);
+  return `${hash}-${tail}`;
+}
+
+function sanitizeTail(t) {
+  return t
+    .replace(/[^a-zA-Z0-9\-_.@]/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48) || "cwd";
 }
 
 function main() {
