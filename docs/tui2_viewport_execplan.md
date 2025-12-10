@@ -7,7 +7,11 @@ sessions without rediscovering the process.
 ## Baseline
 
 - `main` already contains the `tui2` feature-flag plumbing:
-  - `codex-tui2` shim crate exists and delegates to `codex-tui`.
+  - `codex-tui2` originally started as a thin shim crate that delegated to
+    `codex-tui`.
+  - We now maintain a full copy of the `codex-rs/tui/src` tree under
+    `codex-rs/tui2/src` so viewport and history work can evolve in `tui2`
+    without destabilizing the legacy TUI.
   - `codex` CLI selects the frontend via the `tui2` feature flag, resolved from
     config (including profiles and CLI `-c` / `--enable` overrides).
 - The `joshka/viewport` bookmark holds the original viewport work against the
@@ -32,6 +36,18 @@ sessions without rediscovering the process.
     This ensures new `tui2` commits preserve at least the same level of
     documentation and context.
 
+- Change lifecycle for each viewport port:
+  - Before reading any code or tests for the next iteration, create a new
+    change and set an initial description:
+    - `jj new 'trunk()'`
+    - `jj desc -m "feat(tui2): <short summary>"`.
+  - It is fine to read `jj log` output (including the original viewport
+    commit’s detailed message) to decide on that summary before creating the
+    change, but avoid opening source files until the new description is set.
+  - As work progresses, update the change description to reflect the actual
+    behavior and scope; never shrink the amount of context, only refine and
+    expand it where helpful.
+
 - Working copy and history:
   - `jj status` to confirm the current working change `@` and its parent `@-`.
   - `jj log -r 'main..bookmarks("joshka/viewport")'` to see the viewport
@@ -40,11 +56,14 @@ sessions without rediscovering the process.
     current working copy.
 
 - New work:
-  - Start a fresh change when beginning a new chunk of work:
+  - Start a fresh change when beginning a new chunk of work, before touching
+    any non-log files:
     - `jj new 'trunk()'` (or from the current head on `main` as appropriate).
   - Immediately set a descriptive change message:
     - `jj desc -m "feat(tui2): <short summary>"`.
-  - Keep `jj status` clean and meaningful throughout.
+  - Keep `jj status` clean and meaningful throughout, and refine the
+    description after the implementation and verification steps so it matches
+    the final behavior.
 
 - Diff inspection:
   - For each viewport commit being ported, inspect the full original diff:

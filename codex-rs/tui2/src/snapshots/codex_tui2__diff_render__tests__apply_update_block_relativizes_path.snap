@@ -1,0 +1,14 @@
+---
+source: tui2/src/diff_render.rs
+expression: terminal.backend()
+---
+"• Edited ~/code/codex-tui2/codex-rs/tui2/abs_old.rs →                           "
+"~/code/codex-tui2/codex-rs/tui2/abs_new.rs (+1 -1)                              "
+"    1 -X                                                                        "
+"    1 +X changed                                                                "
+"    2  Y                                                                        "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
+"                                                                                "
