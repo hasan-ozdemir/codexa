@@ -178,11 +178,23 @@ ported into `tui2`. Update it at the end of each iteration.
     - Keeps existing tests green:
       - Adjusts `App` test constructors in `tui2/src/app.rs` to initialize `transcript_scroll`, and re-runs `cargo test -p codex-tui2` to confirm behavior and snapshots remain unchanged.
 
+  - `wzwouyux 99c761fa` – `feat: implement transcript scrolling statefully`
+    - Builds on the scroll plumbing by teaching TUI2 to maintain a stable transcript viewport when scrolled:
+      - Refactors inline transcript rendering in `codex-rs/tui2/src/app.rs` to use a shared `build_transcript_lines` helper that returns both the flattened `Line` buffer and a parallel metadata vector mapping each line back to `(cell_index, line_in_cell)` or `None` for spacer lines.
+      - Updates `render_transcript_cells` to:
+        - Clear the transcript area and reset `transcript_scroll` to `ToBottom` when there are no lines.
+        - Compute the top offset from the current `TranscriptScroll` anchor (or fall back to the bottom if the anchor is no longer present), and render only the visible slice of lines.
+    - Implements mouse-driven scrolling anchored to history cells:
+      - Adds `handle_mouse_event` and `scroll_transcript` on `App`, interpreting scroll wheel events over the transcript area as ±3-line deltas and updating `transcript_scroll` to either `ToBottom` or `Scrolled { cell_index, line_in_cell }` based on the nearest visible line.
+      - Wires `TuiEvent::Mouse` through `handle_tui_event` to these helpers and schedules a redraw via `tui.frame_requester().schedule_frame()` whenever scroll state changes.
+    - Keeps tests and snapshots stable:
+      - Ensures the default behavior remains pinned to bottom (`TranscriptScroll::ToBottom`) so non-scrolled sessions render as before, and re-runs `cargo test -p codex-tui2` to verify all 512 tests pass with no snapshot updates required.
+
 - **Last ported viewport change**:
-  - `xyqklwts 13ed4470` – `feat: add transcript scroll plumbing`
+  - `wzwouyux 99c761fa` – `feat: implement transcript scrolling statefully`
 
 - **Next planned viewport change to port**:
-  - `wzwouyux 99c761fa` – `feat: implement transcript scrolling statefully`
+  - (next viewport commit after `wzwouyux` on `joshka/viewport`, see `jj log -r 'main..bookmarks(\"joshka/viewport\")'` for the current head)
 
 - **Estimated iterations**
   - There are ~19 viewport commits after `rmntvvqt`. Many are tightly related
