@@ -246,8 +246,16 @@ ported into `tui2`. Update it at the end of each iteration.
       - The CLI adapter `from_tui2_exit_info` maps TUI2’s `session_lines` into the shared `codex_tui::AppExitInfo` type so `cli/src/main.rs` can print the transcript uniformly before the existing token usage / resume lines.
     - Legacy TUI stays stable:
       - TUI1’s `AppExitInfo` grows a `session_lines` field but all existing exit paths populate it as `Vec::new()`, so `handle_app_exit` prints the transcript only for TUI2-backed sessions.
-  - [ ] `ovqzxktt 7bc3a11c` – `feat: add clipboard copy for transcript selection`
-  - [ ] `szttkmuz 08436aef` – `docs: describe streaming markdown wrapping`
+  - [x] `ovqzxktt 7bc3a11c` – `feat: add clipboard copy for transcript selection`
+    - Adds a transcript-selection copy path in `codex-rs/tui2/src/app.rs`:
+      - Binds `Ctrl-Y` in the main view to a new `copy_transcript_selection` helper that re-renders the visible transcript region into an off-screen buffer and extracts the selected text based on the screen-space selection coordinates.
+      - Uses the new `tui2/src/clipboard_copy.rs` helper (ported from the original TUI) to write the joined lines to the system clipboard via `arboard`, logging any failures without changing the on-screen UI yet.
+    - Current TUI2 behavior:
+      - Copying a transcript selection now works end-to-end for TUI2 sessions; footer hints and explicit “selection copied / copy failed” status messages will be introduced alongside the later scroll/copy hint work (`qnqzrtwo`) to keep that UX change grouped.
+  - [x] `szttkmuz 08436aef` – `docs: describe streaming markdown wrapping`
+    - Mirrors the original streaming wrapping design note for TUI2:
+      - Adds `codex-rs/tui2/src/streaming_wrapping_design.md`, summarizing where streaming markdown is implemented in TUI2 (`markdown_stream`, `chatwidget`, `history_cell`, `wrapping`) and how it shares the same “pre‑wrap vs. reflow” tradeoffs as the legacy TUI.
+      - Documents that TUI2 currently stays close to the legacy behavior while viewport work is being ported, and points to `tui2/src/wrapping.rs` as the primary abstraction for viewport‑aware wrapping.
   - [ ] `ylmxkvop 27265cae` – `feat: show transcript scroll position in footer`
   - [ ] `nlrrtzzr f9d71f35` – `feat: add keyboard shortcuts for transcript scroll`
   - [ ] `qnqzrtwo 2f20caac` – `feat: surface transcript scroll and copy hints`
@@ -271,10 +279,10 @@ ported into `tui2`. Update it at the end of each iteration.
       - Wheel scrolling still clears selections and delegates to `scroll_transcript`, and existing snapshots remain valid because selection and streaming behavior only affect interactive navigation.
 
 - **Last ported viewport change**:
-  - `stsxnzvx 892a8c86` – `feat: print session transcript after TUI exit`
+  - `szttkmuz 08436aef` – `docs: describe streaming markdown wrapping`
 
 - **Next planned viewport change to port**:
-  - `ovqzxktt 7bc3a11c` – `feat: add clipboard copy for transcript selection`
+  - `ylmxkvop 27265cae` – `feat: show transcript scroll position in footer`
 
 - **Estimated iterations**
   - There are ~19 viewport commits after `rmntvvqt`. Many are tightly related
