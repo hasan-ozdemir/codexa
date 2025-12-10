@@ -162,7 +162,7 @@ Mouse interaction is a first‑class part of the new design:
 - **Selection.**
   - A click‑and‑drag gesture defines a linear text selection in terms of the flattened transcript
     lines (not raw buffer coordinates).
-  - Selection tracks the *content* rather than a fixed screen row. When the transcript scrolls, the
+  - Selection tracks the _content_ rather than a fixed screen row. When the transcript scrolls, the
     selection moves along with the underlying lines instead of staying glued to a particular Y
     position.
   - The selection only covers the “transcript text” area; it intentionally skips the left gutter
@@ -265,7 +265,7 @@ Streaming agent responses are represented as a sequence of history entries:
 From the history/scrollback perspective:
 
 - Each streaming chunk is just another entry in the logical transcript.
-- The high‑water mark is a simple count of how many entries at the *front* of the transcript have
+- The high‑water mark is a simple count of how many entries at the _front_ of the transcript have
   already been printed.
 - As new streaming chunks arrive, they are appended as new entries and will be included the next
   time we print history on suspend or exit.
@@ -340,7 +340,7 @@ The transcript overlay (pager) is a full‑screen view of the same logical trans
   transcript so that only history up to the chosen user message remains, then re‑renders that prefix
   in the main view.
 
-The overlay is purely a different *view* of the same transcript; it never infers anything from
+The overlay is purely a different _view_ of the same transcript; it never infers anything from
 scrollback.
 
 ---
@@ -359,7 +359,7 @@ scrollback.
 - Because cells are always re‑rendered live from the transcript, per‑cell interactions can become
   richer over time. Instead of treating the transcript as “dead text”, we can make individual
   entries interactive after they are rendered: expanding or contracting tool calls, diffs, or
-  reasoning summaries in place, jum…truncated… ***
+  reasoning summaries in place, jum…truncated… \*\*\*
 
 ---
 
@@ -403,7 +403,7 @@ explicit discussion before we commit to further UI changes.
     we would intentionally allow a small amount of duplication at the boundary of that message (for
     example, its last line appearing twice across suspends). Is that acceptable if it improves the
     readability of long streaming answers in scrollback, and should the ability to disable
-    suspend‑time printing be our escape hatch for users who care about exact de‑duplication?***
+    suspend‑time printing be our escape hatch for users who care about exact de‑duplication?\*\*\*
 
 ---
 
@@ -425,4 +425,3 @@ This document describes the design in terms of the original TUI crate. The TUI2 
 
 For TUI2‑specific details and code pointers, see `codex-rs/docs/tui2_viewport_and_history.md`, which
 maps this design directly onto the TUI2 crate.
-

@@ -719,10 +719,7 @@ impl App {
 
         let transcript_visible_height = max_visible as u16;
         let chat_top = if total_lines <= max_transcript_height as usize {
-            let gap = if transcript_visible_height == 0 { 0 } else { 1 };
-            area.y
-                .saturating_add(transcript_visible_height)
-                .saturating_add(gap)
+            area.y.saturating_add(transcript_visible_height)
         } else {
             area.bottom().saturating_sub(chat_height)
         };
@@ -787,11 +784,11 @@ impl App {
     /// - Mouse clicks and drags adjust a text selection defined in terms of
     ///   flattened transcript lines and columns, so the selection is anchored
     ///   to the underlying content rather than absolute screen rows.
-    /// - When a selection begins while the view is following the bottom and a task is
-    ///   actively running (e.g., streaming a response), the scroll mode is first converted
-    ///   into an anchored position so that ongoing updates no longer move the viewport
-    ///   under the selection. If no task is running, starting a selection leaves scroll
-    ///   behavior unchanged.
+    /// - When the user drags to extend a selection while the view is following the bottom
+    ///   and a task is actively running (e.g., streaming a response), the scroll mode is
+    ///   first converted into an anchored position so that ongoing updates no longer move
+    ///   the viewport under the selection. A simple click without a drag does not change
+    ///   scroll behavior.
     fn handle_mouse_event(
         &mut self,
         tui: &mut tui::Tui,
@@ -863,12 +860,6 @@ impl App {
                 );
             }
             MouseEventKind::Down(MouseButton::Left) => {
-                if streaming && matches!(self.transcript_scroll, TranscriptScroll::ToBottom) {
-                    self.lock_transcript_scroll_to_current_view(
-                        transcript_area.height as usize,
-                        transcript_area.width,
-                    );
-                }
                 if let Some(point) = self.transcript_point_from_coordinates(
                     transcript_area,
                     base_x,
@@ -880,24 +871,24 @@ impl App {
                 }
             }
             MouseEventKind::Drag(MouseButton::Left) => {
-                if streaming
-                    && matches!(self.transcript_scroll, TranscriptScroll::ToBottom)
-                    && self.transcript_selection.anchor.is_some()
-                {
-                    self.lock_transcript_scroll_to_current_view(
-                        transcript_area.height as usize,
-                        transcript_area.width,
-                    );
-                }
-                if self.transcript_selection.anchor.is_some() {
-                    if let Some(point) = self.transcript_point_from_coordinates(
+                if let Some(anchor) = self.transcript_selection.anchor
+                    && let Some(point) = self.transcript_point_from_coordinates(
                         transcript_area,
                         base_x,
                         clamped_x,
                         clamped_y,
-                    ) {
-                        self.transcript_selection.head = Some(point);
+                    )
+                {
+                    if streaming
+                        && matches!(self.transcript_scroll, TranscriptScroll::ToBottom)
+                        && point != anchor
+                    {
+                        self.lock_transcript_scroll_to_current_view(
+                            transcript_area.height as usize,
+                            transcript_area.width,
+                        );
                     }
+                    self.transcript_selection.head = Some(point);
                 }
             }
             MouseEventKind::Up(MouseButton::Left) => {
@@ -2200,11 +2191,11 @@ mod tests {
     fn make_test_app() -> App {
         let (chat_widget, app_event_tx, _rx, _op_rx) = make_chatwidget_manual_with_sender();
         let config = chat_widget.config_ref().clone();
-        let server = Arc::new(ConversationManager::with_auth_for_testing(
-            CodexAuth::from_api_key("Test API Key"),
-        ));
         let auth_manager =
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+        let server = Arc::new(ConversationManager::with_auth_for_testing(
+            auth_manager.clone(),
+        ));
         let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
 
         App {
@@ -2241,11 +2232,11 @@ mod tests {
     ) {
         let (chat_widget, app_event_tx, rx, op_rx) = make_chatwidget_manual_with_sender();
         let config = chat_widget.config_ref().clone();
-        let server = Arc::new(ConversationManager::with_auth_for_testing(
-            CodexAuth::from_api_key("Test API Key"),
-        ));
         let auth_manager =
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+        let server = Arc::new(ConversationManager::with_auth_for_testing(
+            auth_manager.clone(),
+        ));
         let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
 
         (

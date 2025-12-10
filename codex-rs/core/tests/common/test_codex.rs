@@ -100,13 +100,15 @@ impl TestCodexBuilder {
         let conversation_manager = ConversationManager::with_auth_for_testing(auth_manager);
 
         let new_conversation = match resume_from {
-            Some(path) => conversation_manager
-                .resume_conversation_from_rollout(
-                    config.clone(),
-                    path,
-                    codex_core::AuthManager::from_auth_for_testing(auth),
-                )
-                .await?,
+            Some(path) => {
+                conversation_manager
+                    .resume_conversation_from_rollout(
+                        config.clone(),
+                        path,
+                        codex_core::AuthManager::from_auth_for_testing(auth),
+                    )
+                    .await?
+            }
             None => {
                 conversation_manager
                     .new_conversation(config.clone())

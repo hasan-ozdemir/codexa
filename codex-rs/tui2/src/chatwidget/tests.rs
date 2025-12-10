@@ -347,10 +347,10 @@ async fn helpers_are_available_and_do_not_panic() {
     let tx = AppEventSender::new(tx_raw);
     let cfg = test_config();
     let model_family = ModelsManager::construct_model_family_offline(&cfg.model, &cfg);
-    let conversation_manager = Arc::new(ConversationManager::with_auth(CodexAuth::from_api_key(
-        "test",
-    )));
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("test"));
+    let conversation_manager = Arc::new(ConversationManager::with_auth_for_testing(
+        auth_manager.clone(),
+    ));
     let init = ChatWidgetInit {
         config: cfg,
         frame_requester: FrameRequester::test_dummy(),

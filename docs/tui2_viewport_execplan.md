@@ -33,8 +33,8 @@ sessions without rediscovering the process.
   - For each viewport commit, inspect the **full commit message** (header and
     body) using:
     - `jj log -Tbuiltin_log_detailed -r <rev>`
-    This ensures new `tui2` commits preserve at least the same level of
-    documentation and context.
+      This ensures new `tui2` commits preserve at least the same level of
+      documentation and context.
 
 - Change lifecycle for each viewport port:
   - Before reading any code or tests for the next iteration, create a new
@@ -196,7 +196,7 @@ ported into `tui2`. Update it at the end of each iteration.
   - [x] `eac367c410170684a2d0689daf6270477f639529` – `tui: lift bottom pane with short transcript`
     - Adjusts the main inline layout so the chat composer sits directly beneath the rendered transcript when history is short:
       - Changes the `TuiEvent::Draw` path in `codex-rs/tui2/src/app.rs` to let `render_transcript_cells` return a `chat_top` row given the desired chat height, and positions the chat area starting at that row instead of always pegging it to the bottom of the terminal.
-      - Clears only the region above the chat before drawing the transcript and fills any remaining rows *below* the chat to avoid stale content after layout changes.
+      - Clears only the region above the chat before drawing the transcript and fills any remaining rows _below_ the chat to avoid stale content after layout changes.
     - Refines transcript rendering to respect a bounded transcript region above the chat:
       - Computes a `max_transcript_height = frame.height - chat_height` and renders at most that many lines of wrapped transcript, preserving the existing scroll anchoring and bottom-pinned behavior from the previous iteration.
       - When the transcript is shorter than the available space, places the chat immediately below the transcript with at most a single spacer line; when it is longer, retains the original “chat pinned to bottom” layout.
@@ -344,4 +344,4 @@ ported into `tui2`. Update it at the end of each iteration.
 
 This plan should be sufficient to resume the TUI viewport porting work in a
 future Codex session, without rediscovering the JJ tooling or the reuse-vs-copy
-strategy for `tui2`. 
+strategy for `tui2`.
