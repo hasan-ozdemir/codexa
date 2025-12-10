@@ -2580,7 +2580,7 @@ mod tests {
         let model = ModelsManager::get_model_offline(config.model.as_deref());
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
-            model: model.clone(),
+            model,
             model_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
@@ -2652,7 +2652,7 @@ mod tests {
         let model = ModelsManager::get_model_offline(config.model.as_deref());
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
-            model: model.clone(),
+            model,
             model_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
@@ -2854,7 +2854,7 @@ mod tests {
         let model = ModelsManager::get_model_offline(config.model.as_deref());
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
-            model: model.clone(),
+            model,
             model_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),
@@ -2939,7 +2939,7 @@ mod tests {
         let model = ModelsManager::get_model_offline(config.model.as_deref());
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
-            model: model.clone(),
+            model,
             model_reasoning_effort: config.model_reasoning_effort,
             model_reasoning_summary: config.model_reasoning_summary,
             developer_instructions: config.developer_instructions.clone(),

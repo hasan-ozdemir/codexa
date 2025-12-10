@@ -15,7 +15,6 @@ use codex_otel::otel_event_manager::OtelEventManager;
 use codex_protocol::ConversationId;
 use codex_protocol::models::ReasoningItemContent;
 use core_test_support::load_default_config_for_test;
-use core_test_support::responses::get_responses_requests;
 use core_test_support::skip_if_no_network;
 use futures::StreamExt;
 use serde_json::Value;
@@ -110,7 +109,7 @@ async fn run_request(input: Vec<ResponseItem>) -> Value {
         }
     }
 
-    let all_requests = server.received_requests().await.unwrap();
+    let all_requests = server.received_requests().await.expect("received requests");
     let requests: Vec<_> = all_requests
         .iter()
         .filter(|req| req.method == "POST" && req.url.path().ends_with("/chat/completions"))
