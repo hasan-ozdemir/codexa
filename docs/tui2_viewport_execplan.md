@@ -226,14 +226,22 @@ ported into `tui2`. Update it at the end of each iteration.
   - [ ] `ylmxkvop 27265cae` – `feat: show transcript scroll position in footer`
   - [ ] `nlrrtzzr f9d71f35` – `feat: add keyboard shortcuts for transcript scroll`
   - [ ] `qnqzrtwo 2f20caac` – `feat: surface transcript scroll and copy hints`
-  - [ ] `xvypqmyw 4abba3b1` – `feat: add mouse selection for transcript`
+  - [x] `xvypqmyw 4abba3b1` – `feat: add mouse selection for transcript`
+    - Adds inline transcript selection tracking and rendering in `codex-rs/tui2/src/app.rs`:
+      - Introduces a `TranscriptSelection` struct on `App` with `anchor` and `head` positions, and uses it to track a mouse-driven selection region within the transcript area.
+      - Extends `render_transcript_cells` to call `apply_transcript_selection`, which walks the visible transcript rows, finds non-empty text spans, and applies a reversed style (`Modifier::REVERSED`) to the selected region while skipping the left gutter.
+    - Extends `handle_mouse_event` to support click-and-drag selection:
+      - Clamps mouse coordinates into the transcript area above the composer, using the same gutter offsets as rendering.
+      - On wheel scroll, clears the current selection and delegates to `scroll_transcript` for ±3-line movement; on left-button down/drag/up, updates `TranscriptSelection` so click-drag selects and click-release on the same point clears.
+    - Keeps tests and snapshots passing:
+      - Updates test `App` constructors to initialize `transcript_selection` and re-runs `cargo test -p codex-tui2`, which passes without snapshot changes (selection is only visible when driven by input).
   - [ ] `sxtvkutr ebd8c2aa` – `tui: make transcript selection-friendly while streaming`
 
 - **Last ported viewport change**:
-  - `7a814b470e2f60e16441834994a76ff2e4799d41` – `tui: restore mouse wheel scrolling in overlays`
+  - `xvypqmyw 4abba3b1` – `feat: add mouse selection for transcript`
 
 - **Next planned viewport change to port**:
-  - `xvypqmyw 4abba3b1` – `feat: add mouse selection for transcript`
+  - `sxtvkutr ebd8c2aa` – `tui: make transcript selection-friendly while streaming`
 
 - **Estimated iterations**
   - There are ~19 viewport commits after `rmntvvqt`. Many are tightly related
