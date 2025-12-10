@@ -12,8 +12,8 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
-base64 = { workspace = true }
 codex-git = { workspace = true }
+
 codex-utils-image = { workspace = true }
 icu_decimal = { workspace = true }
 icu_locale_core = { workspace = true }
@@ -44,5 +44,4 @@ tempfile = { workspace = true }
 # Required because:
 # `icu_provider`: contains a required `sync` feature for `icu_decimal`
 # `strum`: as strum_macros in non-nightly builds
-# `base64`: used indirectly through `serde_with::base64::Base64`
-ignored = ["icu_provider", "strum", "base64"]
+ignored = ["icu_provider", "strum"]
