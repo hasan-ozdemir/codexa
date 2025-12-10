@@ -218,6 +218,8 @@ pub(crate) struct App {
 
     pub(crate) transcript_cells: Vec<Arc<dyn HistoryCell>>,
 
+    transcript_scroll: TranscriptScroll,
+
     // Pager overlay state (Transcript or Static like Diff)
     pub(crate) overlay: Option<Overlay>,
     pub(crate) deferred_history_lines: Vec<Line<'static>>,
@@ -242,6 +244,26 @@ pub(crate) struct App {
     skip_world_writable_scan_once: bool,
 
     pub(crate) skills: Option<Vec<SkillMetadata>>,
+}
+
+/// Scroll state for the inline transcript viewport.
+///
+/// This tracks whether the transcript is pinned to the latest line or anchored
+/// at a specific cell/line pair so later viewport changes can implement
+/// scrollback without losing the notion of "bottom".
+#[derive(Debug, Clone, Copy)]
+enum TranscriptScroll {
+    ToBottom,
+    Scrolled {
+        cell_index: usize,
+        line_in_cell: usize,
+    },
+}
+
+impl Default for TranscriptScroll {
+    fn default() -> Self {
+        TranscriptScroll::ToBottom
+    }
 }
 
 impl App {
@@ -378,6 +400,7 @@ impl App {
             file_search,
             enhanced_keys_supported,
             transcript_cells: Vec::new(),
+            transcript_scroll: TranscriptScroll::ToBottom,
             overlay: None,
             deferred_history_lines: Vec::new(),
             has_emitted_history_lines: false,
@@ -458,6 +481,9 @@ impl App {
             match event {
                 TuiEvent::Key(key_event) => {
                     self.handle_key_event(tui, key_event).await;
+                }
+                TuiEvent::Mouse(_mouse_event) => {
+                    // Transcript mouse scroll will be implemented in a later viewport change.
                 }
                 TuiEvent::Paste(pasted) => {
                     // Many terminals convert newlines to \r when pasting (e.g., iTerm2),
