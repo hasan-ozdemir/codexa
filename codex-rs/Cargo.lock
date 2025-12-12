@@ -836,7 +836,6 @@ dependencies = [
  "codex-file-search",
  "codex-login",
  "codex-protocol",
- "codex-rmcp-client",
  "codex-utils-json-to-toml",
  "core_test_support",
  "mcp-types",
@@ -989,7 +988,6 @@ dependencies = [
  "codex-rmcp-client",
  "codex-stdio-to-uds",
  "codex-tui",
- "codex-tui2",
  "codex-windows-sandbox",
  "ctor 0.5.0",
  "libc",
@@ -1435,7 +1433,6 @@ name = "codex-process-hardening"
 version = "0.0.0"
 dependencies = [
  "libc",
- "pretty_assertions",
 ]
 
 [[package]]

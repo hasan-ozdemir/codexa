@@ -48,7 +48,6 @@ use crate::error::Result;
 use crate::flags::CODEX_RS_SSE_FIXTURE;
 use crate::model_provider_info::ModelProviderInfo;
 use crate::model_provider_info::WireApi;
-use crate::openai_model_info::get_model_info;
 use crate::openai_models::model_family::ModelFamily;
 use crate::tools::spec::create_tools_json_for_chat_completions_api;
 use crate::tools::spec::create_tools_json_for_responses_api;
@@ -95,17 +94,9 @@ impl ModelClient {
     pub fn get_model_context_window(&self) -> Option<i64> {
         let model_family = self.get_model_family();
         let effective_context_window_percent = model_family.effective_context_window_percent;
-        self.config
-            .model_context_window
-            .or_else(|| get_model_info(&model_family).map(|info| info.context_window))
+        model_family
+            .context_window
             .map(|w| w.saturating_mul(effective_context_window_percent) / 100)
-    }
-
-    pub fn get_auto_compact_token_limit(&self) -> Option<i64> {
-        let model_family = self.get_model_family();
-        self.config.model_auto_compact_token_limit.or_else(|| {
-            get_model_info(&model_family).and_then(|info| info.auto_compact_token_limit)
-        })
     }
 
     pub fn config(&self) -> Arc<Config> {
@@ -175,7 +166,7 @@ impl ModelClient {
 
             let stream_result = client
                 .stream_prompt(
-                    &self.config.model,
+                    &self.get_model(),
                     &api_prompt,
                     Some(conversation_id.clone()),
                     Some(session_source.clone()),
@@ -215,7 +206,11 @@ impl ModelClient {
         let reasoning = if model_family.supports_reasoning_summaries {
             Some(Reasoning {
                 effort: self.effort.or(model_family.default_reasoning_effort),
-                summary: Some(self.summary),
+                summary: if self.summary == ReasoningSummaryConfig::None {
+                    None
+                } else {
+                    Some(self.summary)
+                },
             })
         } else {
             None
@@ -269,7 +264,7 @@ impl ModelClient {
             };
 
             let stream_result = client
-                .stream_prompt(&self.config.model, &api_prompt, options)
+                .stream_prompt(&self.get_model(), &api_prompt, options)
                 .await;
 
             match stream_result {
@@ -301,7 +296,7 @@ impl ModelClient {
 
     /// Returns the currently configured model slug.
     pub fn get_model(&self) -> String {
-        self.config.model.clone()
+        self.get_model_family().get_model_slug().to_string()
     }
 
     /// Returns the currently configured model family.
@@ -346,7 +341,7 @@ impl ModelClient {
             .get_full_instructions(&self.get_model_family())
             .into_owned();
         let payload = ApiCompactionInput {
-            model: &self.config.model,
+            model: &self.get_model(),
             input: &prompt.input,
             instructions: &instructions,
         };
