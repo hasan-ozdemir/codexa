@@ -37,6 +37,7 @@ use core_test_support::responses::sse_failed;
 use core_test_support::responses::start_mock_server;
 use pretty_assertions::assert_eq;
 use serde_json::json;
+use wiremock::MockServer;
 // --- Test helpers -----------------------------------------------------------
 
 pub(super) const FIRST_REPLY: &str = "FIRST_REPLY";
@@ -99,6 +100,13 @@ fn json_fragment(text: &str) -> String {
         .to_string()
 }
 
+fn non_openai_model_provider(server: &MockServer) -> ModelProviderInfo {
+    let mut provider = built_in_model_providers()["openai"].clone();
+    provider.name = "OpenAI (test)".into();
+    provider.base_url = Some(format!("{}/v1", server.uri()));
+    provider
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn summarize_context_three_requests_and_instructions() {
     skip_if_no_network!();
@@ -126,10 +134,7 @@ async fn summarize_context_three_requests_and_instructions() {
     let request_log = mount_sse_sequence(&server, vec![sse1, sse2, sse3]).await;
 
     // Build config pointing to the mock server and spawn Codex.
-    let model_provider = ModelProviderInfo {
-        base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers()["openai"].clone()
-    };
+    let model_provider = non_openai_model_provider(&server);
     let home = TempDir::new().unwrap();
     let mut config = load_default_config_for_test(&home);
     config.model_provider = model_provider;
@@ -320,10 +325,7 @@ async fn manual_compact_uses_custom_prompt() {
 
     let custom_prompt = "Use this compact prompt instead";
 
-    let model_provider = ModelProviderInfo {
-        base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers()["openai"].clone()
-    };
+    let model_provider = non_openai_model_provider(&server);
     let home = TempDir::new().unwrap();
     let mut config = load_default_config_for_test(&home);
     config.model_provider = model_provider;
@@ -400,10 +402,7 @@ async fn manual_compact_emits_api_and_local_token_usage_events() {
     ]);
     mount_sse_once(&server, sse_compact).await;
 
-    let model_provider = ModelProviderInfo {
-        base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers()["openai"].clone()
-    };
+    let model_provider = non_openai_model_provider(&server);
     let home = TempDir::new().unwrap();
     let mut config = load_default_config_for_test(&home);
     config.model_provider = model_provider;
@@ -457,7 +456,11 @@ async fn multiple_auto_compact_per_task_runs_after_token_limit_hit() {
 
     let server = start_mock_server().await;
 
+    let non_openai_provider_name = non_openai_model_provider(&server).name;
     let codex = test_codex()
+        .with_config(move |config| {
+            config.model_provider.name = non_openai_provider_name;
+        })
         .build(&server)
         .await
         .expect("build codex")
@@ -1040,10 +1043,7 @@ async fn auto_compact_runs_after_token_limit_hit() {
     };
     mount_sse_once_match(&server, fourth_matcher, sse4).await;
 
-    let model_provider = ModelProviderInfo {
-        base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers()["openai"].clone()
-    };
+    let model_provider = non_openai_model_provider(&server);
 
     let home = TempDir::new().unwrap();
     let mut config = load_default_config_for_test(&home);
@@ -1286,10 +1286,7 @@ async fn auto_compact_persists_rollout_entries() {
     };
     mount_sse_once_match(&server, third_matcher, sse3).await;
 
-    let model_provider = ModelProviderInfo {
-        base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers()["openai"].clone()
-    };
+    let model_provider = non_openai_model_provider(&server);
 
     let home = TempDir::new().unwrap();
     let mut config = load_default_config_for_test(&home);
@@ -1387,10 +1384,7 @@ async fn manual_compact_retries_after_context_window_error() {
     )
     .await;
 
-    let model_provider = ModelProviderInfo {
-        base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers()["openai"].clone()
-    };
+    let model_provider = non_openai_model_provider(&server);
 
     let home = TempDir::new().unwrap();
     let mut config = load_default_config_for_test(&home);
@@ -1520,10 +1514,7 @@ async fn manual_compact_twice_preserves_latest_user_messages() {
     )
     .await;
 
-    let model_provider = ModelProviderInfo {
-        base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers()["openai"].clone()
-    };
+    let model_provider = non_openai_model_provider(&server);
 
     let home = TempDir::new().unwrap();
     let mut config = load_default_config_for_test(&home);
@@ -1721,10 +1712,7 @@ async fn auto_compact_allows_multiple_attempts_when_interleaved_with_other_turn_
 
     mount_sse_sequence(&server, vec![sse1, sse2, sse3, sse4, sse5, sse6]).await;
 
-    let model_provider = ModelProviderInfo {
-        base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers()["openai"].clone()
-    };
+    let model_provider = non_openai_model_provider(&server);
 
     let home = TempDir::new().unwrap();
     let mut config = load_default_config_for_test(&home);
@@ -1833,10 +1821,7 @@ async fn auto_compact_triggers_after_function_call_over_95_percent_usage() {
     // We don't assert on the post-compact request, so no need to keep its mock.
     mount_sse_once(&server, post_auto_compact_turn).await;
 
-    let model_provider = ModelProviderInfo {
-        base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers()["openai"].clone()
-    };
+    let model_provider = non_openai_model_provider(&server);
 
     let home = TempDir::new().unwrap();
     let mut config = load_default_config_for_test(&home);
@@ -1935,13 +1920,18 @@ async fn auto_compact_counts_encrypted_reasoning_before_last_user() {
     )
     .await;
 
-    let compacted_history = vec![codex_protocol::models::ResponseItem::Message {
-        id: None,
-        role: "assistant".to_string(),
-        content: vec![codex_protocol::models::ContentItem::OutputText {
-            text: "REMOTE_COMPACT_SUMMARY".to_string(),
-        }],
-    }];
+    let compacted_history = vec![
+        codex_protocol::models::ResponseItem::Message {
+            id: None,
+            role: "assistant".to_string(),
+            content: vec![codex_protocol::models::ContentItem::OutputText {
+                text: "REMOTE_COMPACT_SUMMARY".to_string(),
+            }],
+        },
+        codex_protocol::models::ResponseItem::Compaction {
+            encrypted_content: "ENCRYPTED_COMPACTION_SUMMARY".to_string(),
+        },
+    ];
     let compact_mock =
         mount_compact_json_once(&server, serde_json::json!({ "output": compacted_history })).await;
 
@@ -2001,5 +1991,9 @@ async fn auto_compact_counts_encrypted_reasoning_before_last_user() {
     assert!(
         resume_body.contains("REMOTE_COMPACT_SUMMARY") || resume_body.contains(FINAL_REPLY),
         "resume request should follow remote compact and use compacted history"
+    );
+    assert!(
+        resume_body.contains("ENCRYPTED_COMPACTION_SUMMARY"),
+        "resume request should include compaction summary item"
     );
 }
